@@ -1,5 +1,9 @@
 from xntricweb.xapi import XAPI, Entrypoint
 
+# import logging
+
+# logging.basicConfig(level=logging.DEBUG)
+
 xapi = XAPI()
 
 
@@ -25,7 +29,7 @@ class Math(Entrypoint):
 xapi.entrypoint(Math())
 
 
-@xapi.entrypoint
+@xapi.entrypoint(name="dumb-math")
 class DumbMath(Entrypoint):
 
     def sub(

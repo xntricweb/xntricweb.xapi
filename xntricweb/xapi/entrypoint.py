@@ -120,12 +120,15 @@ class Entrypoint:
 
         return args, kwargs
 
-    def execute(self, params: dict[str, Any]):
+    def execute(self, params: dict[str, Any], executor):
         if self.parent:
             self.parent.execute(params)
 
         if not self.entrypoint:
-            raise AttributeError("Entrypoint not ready to execute %s" % self)
+            raise AttributeError(
+                "Nothing to do for entrypoint: %s" % self.name
+            )
+
         arg, kwargs = self.generate_call_args(params)
         return self.entrypoint(*arg, **kwargs)
 
@@ -157,6 +160,9 @@ class Entrypoint:
             ],
             **(details | overrides),
         )
+
+    def __str__(self):
+        return f"entrypoint({self.name})"
 
     def __repr__(self):
         return f"{self.__class__.__name__}({', '.join([

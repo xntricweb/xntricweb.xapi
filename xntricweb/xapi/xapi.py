@@ -1,6 +1,6 @@
 import argparse
 from enum import Enum
-from typing import Callable, Literal, Optional
+from typing import Callable, Literal, Optional, Type
 
 from xntricweb.xapi.utility import coalesce
 
@@ -12,7 +12,7 @@ from .utility import _get_origin_args
 from .xapi_docstring_parser import DocInfo
 
 
-entrypoint_parsers: dict[Entrypoint, argparse.ArgumentParser] = {}
+# entrypoint_parsers: dict[Entrypoint, argparse.ArgumentParser] = {}
 
 
 def default_translator(arg, origin, _, args, kwargs):
@@ -83,13 +83,23 @@ class XAPI:
 
     def entrypoint(
         self,
-        entrypoint: Entrypoint | Callable | str | None = None,
+        entrypoint: (
+            Type[Entrypoint] | Entrypoint | Callable | str | None
+        ) = None,
+        /,
         *,
         deprecated=False,
         **kwargs,
     ):
-        def wrap(fn: Callable = None):
-            if fn:
+        def wrap(fn: Callable | Entrypoint = None):
+            if isinstance(fn, Entrypoint):
+                _entrypoint = fn
+
+            elif type(fn) is type and issubclass(fn, Entrypoint):
+                log.debug("setting up decorated class entrypoint")
+                _entrypoint = fn(**kwargs)
+
+            elif isinstance(fn, Callable):
                 _entrypoint = Entrypoint.from_function(fn, **kwargs)
             else:
                 _entrypoint = Entrypoint(**kwargs)
@@ -99,23 +109,15 @@ class XAPI:
 
             return _entrypoint
 
-        kwargs["deprecated"] = deprecated
+        if deprecated:
+            kwargs["deprecated"] = deprecated
 
-        if isinstance(entrypoint, Entrypoint):
-            self.entrypoints.append(entrypoint)
-            return entrypoint
-
-        if type(entrypoint) is type and issubclass(entrypoint, Entrypoint):
-            _entrypoint = entrypoint(**kwargs)
-            self.entrypoints.append(_entrypoint)
-            return entrypoint
-
-        elif isinstance(entrypoint, str):
+        if isinstance(entrypoint, str):
             kwargs["name"] = entrypoint
+            entrypoint = None
 
-        elif isinstance(entrypoint, Callable):
+        if entrypoint:
             return wrap(entrypoint)
-
         return wrap
 
     def effect(
@@ -158,15 +160,15 @@ class XAPI:
         if not root_parser:
             root_parser = argparse.ArgumentParser(**parser_args)
 
-        executor = _XAPIExecutor(self, root_parser=root_parser)
+        executor = XAPIExecutor(self, root_parser=root_parser)
         return executor.run(argv, namespace)
 
 
-class _XAPIExecutor:
+class XAPIExecutor:
     def __init__(self, xapi: XAPI, root_parser: argparse.ArgumentParser):
         self.xapi = xapi
         self.effect_parser = argparse.ArgumentParser(add_help=False)
-        self.parsers = []
+        self.parsers: dict[Entrypoint, argparse.ArgumentParser] = {}
 
         self.setup_effects()
         self.root_parser = argparse.ArgumentParser(
@@ -329,7 +331,7 @@ class _XAPIExecutor:
         )
         parser.set_defaults(__entrypoint__=entrypoint)
 
-        entrypoint_parsers[entrypoint] = parser
+        self.parsers[entrypoint] = parser
 
         if entrypoint.arguments:
             self.setup_arguments(entrypoint.arguments, parser, doc_info)
@@ -377,7 +379,11 @@ class _XAPIExecutor:
     ):
         log.debug("executing entrypoint: %r", entrypoint)
         try:
-            return entrypoint.execute(vars(namespace))
+            return entrypoint.execute(vars(namespace), self)
+        except AttributeError as e:
+            self._print_and_exit(
+                self.parsers.get(entrypoint, None), 20, str(e)
+            )
         except ConversionError as e:
             self._print_and_exit(
                 self.parsers.get(entrypoint, None), 10, str(e)

@@ -1,7 +1,7 @@
 from typing import Literal
 
 import pytest
-from xntricweb.xapi.xapi import _XAPIExecutor, XAPI
+from xntricweb.xapi.xapi import XAPIExecutor, XAPI
 from xntricweb.xapi.arguments import Argument
 from types import SimpleNamespace
 import unittest.mock as mocks
@@ -19,7 +19,7 @@ mocks.patch("argparse.ArgumentParser", mock_ArgumentParser)
 mock_parser = SimpleNamespace(prefix_chars="-")
 
 
-_executor = _XAPIExecutor(XAPI(), mock_ArgumentParser)
+_executor = XAPIExecutor(XAPI(), mock_ArgumentParser)
 
 
 def gen(arg):
