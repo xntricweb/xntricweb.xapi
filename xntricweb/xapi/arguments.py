@@ -1,45 +1,190 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Optional, Type
+from typing import Any, Callable, Literal, Optional, Union
+
+from xntricweb.xapi.utility import _get_origin_args
+
+from .const import NOT_SPECIFIED, log
 
 
 @dataclass
 class Argument:
-    name: Optional[str] = None
+    """Describes a method argument."""
+
+    name: str
+    """The argument name."""
+
     annotation: Optional[Callable] = None
+    """
+    The arguments annotation type. 
+    This must be a Callable and will be used to coerce the value to the 
+    correct type for the function.
+    """
+
     index: Optional[int] = None
-    default: Optional[bool] = None
-    required: Optional[bool] = False
+    """
+    The positional index of the argument. If the argument is keyword
+    only it should be set to None.
+    """
+
+    default: Optional[bool] = NOT_SPECIFIED
+    """
+    The default value of the argument. If NOT_SPECIFIED then the
+    argument is considered required.
+    """
+
+    vararg: Optional[bool] = None
+    """
+    Whether the argument is a vararg type of argument... e.g. *args, **kwargs
+    """
 
     aliases: Optional[list[str]] = None
-    vararg: Optional[bool] = False
     help: Optional[str] = None
     metavar: Optional[str] = None
 
-    def apply_arg_details(
-        self, index: int, name: str, default: Any, annotation: Type
-    ):
-        self.index = index
-        self.name = name
-        self.default = default
-        self.annotation = annotation
-        self.required = True
+    @property
+    def required(self):
+        return self.default is NOT_SPECIFIED
 
     def generate_call_arg(
         self, value: Any, args: list[Any], kwargs: dict[str, Any]
     ):
-        converter = self.annotation or str
+        log.debug("generating call args for %r with value %r", self, value)
 
         if self.vararg:
-            args.extend(map(converter, value))
-            return
-
+            _value = _convert(value, list[self.annotation])
+            log.debug("generating varargs for %r with value %r", self, _value)
+            return args.extend(_value)
+        _value = _convert(value, self.annotation)
         if self.required:
-            args.append(converter(value))
+            log.debug(
+                "generating positional for %r with value %r", self, _value
+            )
+            return args.append(_value)
+
+        if _value != self.default:
+            log.debug("generating kwargs for %r with value %r", self, _value)
+            kwargs[self.name] = _value
             return
 
-        if value != self.default:
-            kwargs[self.name] = converter(value)
+        log.debug("no call args generated for %r with value %r", self, _value)
 
-        return converter(value)
+    def __repr__(self):
+        return f"{self.__class__.__name__}({', '.join([
+            f'{k}={v}'
+            for k, v in vars(self).items()
+            if not (v is None or v is NOT_SPECIFIED or k[0] == ('_'))
+        ])})"
+
+
+class ConversionError(TypeError):
+    """The error that is raised when value conversion fails."""
+
+
+def default_type_converter(value, origin, origin_args, **_):
+    log.debug(
+        "using default type cconverter for %r with %r%r",
+        value,
+        origin,
+        origin_args,
+    )
+    return origin(value)
+
+
+def function_type_converter(value, origin, origin_args, annotation):
+    try:
+        return annotation(value)
+    except Exception as e:
+        raise ConversionError(
+            "Failed converting %r with %r" % (value, origin)
+        ) from e
+
+
+def iterable_type_converter(value, origin, origin_args, **_):
+    if not origin_args:
+        return default_type_converter(value, origin, origin_args)
+
+    elif len(origin_args) > 1:
+        if len(origin_args) != len(value):
+            raise ConversionError(
+                f"annotation expected {len(origin_args)} items..."
+                f" found {len(value)}"
+            )
+
+        log.debug("converting %r")
+        return origin(
+            [
+                _convert(sub_value, origin_args[index])
+                for index, sub_value in enumerate(value)
+            ]
+        )
+    else:
+        return origin(
+            [_convert(sub_value, origin_args[0]) for sub_value in value]
+        )
+
+
+def literal_type_converter(value, origin, origin_args, **_):
+    if value in origin_args:
+        return value
+    raise TypeError(f"Expected {origin_args} found '{value}'")
+
+
+def union_type_converter(value, origin, origin_args, annotation, **_):
+    for _type in origin_args:
+        try:
+            return _type(value)
+        except Exception:
+            pass
+
+    raise ValueError("Unable to convert value %s" % value)
+
+
+type_converters = {
+    Union: union_type_converter,
+    Literal: literal_type_converter,
+    list: iterable_type_converter,
+    tuple: iterable_type_converter,
+    function_type_converter.__class__.__base__: function_type_converter,
+}
+
+
+def _convert(value, annotation):
+    if not annotation:
+        return value
+
+    origin, origin_args = _get_origin_args(annotation)
+    converter = type_converters.get(origin, None)
+    if not converter:
+        log.debug("converter not found for origin: %r", origin)
+        if not hasattr(origin, "__bases__"):
+            origin = origin.__class__
+
+        for base in reversed(origin.__bases__):
+            converter = type_converters.get(base)
+            if converter:
+                break
+
+    if not converter:
+        converter = default_type_converter
+
+    log.debug(
+        "converting value '%r' with origin: %r, args: %r",
+        value,
+        origin,
+        origin_args,
+    )
+
+    try:
+        return converter(
+            value=value,
+            origin=origin,
+            origin_args=origin_args,
+            annotation=annotation,
+        )
+    except Exception as e:
+        raise ConversionError(
+            "Failed converting %r with %r, annotation: %r"
+            % (value, origin, annotation)
+        ) from e

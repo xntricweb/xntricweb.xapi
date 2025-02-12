@@ -1,7 +1,7 @@
-from .xapi_argparse import setup, run
+from .xapi import XAPI
 from .entrypoint import Entrypoint
 from .arguments import Argument
 
-from .decorators import effect, entrypoint
+__version__ = "0.1.0"
 
-__all__ = ["Entrypoint", "Argument", "setup", "run", "effect", "entrypoint"]
+__all__ = ["Entrypoint", "Argument", "setup", "XAPI"]

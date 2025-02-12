@@ -1,6 +1,5 @@
 from typing import Callable
 from .entrypoint import Entrypoint, root_entrypoints, root_effects
-from .arguments import Argument
 
 
 def effect(
@@ -10,7 +9,8 @@ def effect(
     **kwargs,
 ):
     def wrap(fn: Callable):
-        _entrypoint = Entrypoint(entrypoint=fn, **kwargs)
+        _entrypoint = Entrypoint.from_function(fn, **kwargs)
+        # _entrypoint = Entrypoint(entrypoint=fn, **kwargs)
 
         if not _entrypoint.parent:
             root_effects.append(_entrypoint)
@@ -38,8 +38,11 @@ def entrypoint(
     deprecated=False,
     **kwargs,
 ):
-    def wrap(fn: Callable):
-        _entrypoint = Entrypoint(entrypoint=fn, **kwargs)
+    def wrap(fn: Callable = None):
+        if fn:
+            _entrypoint = Entrypoint.from_function(fn, **kwargs)
+        else:
+            _entrypoint = Entrypoint(**kwargs)
 
         if not _entrypoint.parent:
             root_entrypoints.append(_entrypoint)
