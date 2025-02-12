@@ -1,7 +1,4 @@
 from xntricweb.xapi import XAPI, Entrypoint
-import logging
-
-# logging.basicConfig(level=logging.DEBUG)
 
 xapi = XAPI()
 
@@ -25,6 +22,9 @@ class Math(Entrypoint):
         return 0
 
 
+xapi.entrypoint(Math())
+
+
 @xapi.entrypoint
 class DumbMath(Entrypoint):
 
@@ -44,7 +44,5 @@ class DumbMath(Entrypoint):
         print(round(term - subtrahend - (sum(subtrahends)), precision))
         return 0
 
-
-xapi.entrypoint(Math())
 
 xapi.run()
