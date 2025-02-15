@@ -129,14 +129,14 @@ def test_tuple_typed():
     def case(value: Optional[tuple[str, int]] = None):
         assert_called_once(case)
         if not value:
-            return ""
+            return
         return f"{':'.join([str(v) for v in value] or [])}"
 
     assert (
         xapi.run("case --value abc 123".split(" "), exit_on_error=False)
         == "abc:123"
     )
-    assert xapi.run("case".split(" "), exit_on_error=False) == ""
+    assert xapi.run("case".split(" "), exit_on_error=False) == None
 
 
 def test_literal_single():
@@ -155,11 +155,78 @@ def test_literal_multi_min():
     xapi = XAPI()
 
     @xapi.entrypoint
-    def case(value: Literal["min", "max"]):
+    def case(value: Optional[Literal["min", "max"]] = "max"):
         assert_called_once(case)
         return value
 
-    assert xapi.run("case min".split(" "), exit_on_error=False) == "min"
+    assert (
+        xapi.run("case --value min".split(" "), exit_on_error=False) == "min"
+    )
+
+    assert xapi.run("case".split(" "), exit_on_error=False) == "max"
+
+
+def test_literal_multi_min_optional():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(value: Optional[Literal["min", "max"]] = None):
+        assert_called_once(case)
+        return value
+
+    assert (
+        xapi.run("case --value min".split(" "), exit_on_error=False) == "min"
+    )
+
+    assert xapi.run("case".split(" "), exit_on_error=False) is None
+
+
+def test_boolean_default_false():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(value: Optional[bool] = False):
+        assert_called_once(case)
+        return value
+
+    with pytest.raises(SystemExit):
+        assert xapi.run("case --value true".split(" ")) is True
+
+    assert xapi.run("case --value".split(" "), exit_on_error=False) is True
+
+    assert xapi.run("case".split(" "), exit_on_error=False) is False
+
+
+def test_boolean_default_true():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(value: Optional[bool] = True):
+        assert_called_once(case)
+        return value
+
+    with pytest.raises(SystemExit):
+        assert xapi.run("case --value true".split(" ")) is True
+
+    assert xapi.run("case --value".split(" "), exit_on_error=False) is False
+
+    assert xapi.run("case".split(" "), exit_on_error=False) is True
+
+
+def test_boolean_default_None():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(value: Optional[bool] = None):
+        assert_called_once(case)
+        return value
+
+    with pytest.raises(SystemExit):
+        assert xapi.run("case --value true".split(" ")) is True
+
+    assert xapi.run("case --value".split(" "), exit_on_error=False) is True
+
+    assert xapi.run("case".split(" "), exit_on_error=False) is False
 
 
 def test_literal_multi_max():

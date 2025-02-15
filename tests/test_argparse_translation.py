@@ -164,7 +164,7 @@ def test_special_annotations():
     cases = [
         (
             Argument("bool", annotation=bool),
-            (["bool"], _d(action="store_true")),
+            (["--bool"], _d(default=False, action="store_true")),
         ),
         # (
         #     Argument("const", annotation=Literal[5]),

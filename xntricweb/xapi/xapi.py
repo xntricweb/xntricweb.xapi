@@ -55,8 +55,9 @@ def literal_translator(ctx: _ParserTranslationContext):
 
 
 def bool_translator(ctx: _ParserTranslationContext):
-    state = coalesce(ctx.argument.default, True)
-    ctx.parser_kwargs["action"] = f"store_{str(state).lower()}"
+    state = ctx.argument.default is True
+    ctx.parser_kwargs["default"] = state
+    ctx.parser_kwargs["action"] = f"store_{str(not state).lower()}"
 
 
 def list_translator(ctx: _ParserTranslationContext):
@@ -284,7 +285,7 @@ class XAPIExecutor:
         if argument.metavar:
             kwargs["metavar"] = argument.metavar
 
-        if not argument.required:
+        if not argument.required or argument.annotation is bool:
             dashed_name = self.xapi.dashed_name(argument.name)
             if argument.name != dashed_name:
                 kwargs["dest"] = argument.name

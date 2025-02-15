@@ -193,3 +193,22 @@ def test_enum():
         return value.value
 
     assert xapi.run("enum_entry a".split(" "), exit_on_error=False) == "a"
+
+
+def test_boolean():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(value: bool):
+        # assert_called_once(case)
+        return value
+
+    with pytest.raises(SystemExit):
+        assert xapi.run("case true".split(" ")) is True
+
+    with pytest.raises(SystemExit):
+        assert xapi.run("case --value true".split(" ")) is True
+
+    assert xapi.run("case --value".split(" "), exit_on_error=False) is True
+
+    assert xapi.run("case".split(" "), exit_on_error=False) is False
