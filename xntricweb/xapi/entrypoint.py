@@ -187,24 +187,31 @@ def _get_inpect_arg_detail(index, param: inspect.Parameter):
         ),
         name=param.name,
         annotation=(
-            param.annotation if param.annotation is not param.empty else None
-        )
-        or (
-            (
-                param.default
-                and param.default is not param.empty
-                and param.default is not NOT_SPECIFIED
-                and type(param.default)
+            (param.annotation if param.annotation is not param.empty else None)
+            or (
+                (
+                    param.default
+                    and param.default is not param.empty
+                    and param.default is not NOT_SPECIFIED
+                    and type(param.default)
+                )
             )
-        )
-        or None,
-        default=param.default if param.default is not param.empty else None,
+            or None
+        ),
+        default=(
+            param.default
+            if param.default is not param.empty
+            else NOT_SPECIFIED
+        ),
         vararg=(
-            param.kind is param.VAR_KEYWORD
-            or param.kind is param.VAR_POSITIONAL
-        )
-        or None,
+            (
+                param.kind is param.VAR_KEYWORD
+                or param.kind is param.VAR_POSITIONAL
+            )
+            or None
+        ),
     )
+    log.debug("generated argument detail: %s", detail)
     return detail
 
 
@@ -234,5 +241,5 @@ def _make_detail(**kwargs):
     return {
         n: v
         for n, v in kwargs.items()
-        if not (v is None or v is NOT_SPECIFIED)
+        if not ((n != "default" and v is None) or v is NOT_SPECIFIED)
     }

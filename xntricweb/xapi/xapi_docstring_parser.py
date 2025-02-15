@@ -51,14 +51,11 @@ class DocInfo:
             return {}
         doc_info = self.doc_info
 
-        info = {
-            "description": "\n".join(
-                [
-                    doc_info.short_description or "",
-                    doc_info.long_description or "",
-                ]
-            ),
-        }
+        description = doc_info.short_description or ""
+        if doc_info.long_description:
+            description += "\n" + doc_info.long_description
+
+        info = {"description": description}
         log.debug("processed entrypoint doc info %r", info)
 
         return info

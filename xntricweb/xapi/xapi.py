@@ -1,6 +1,19 @@
 import argparse
+from dataclasses import dataclass
 from enum import Enum
-from typing import Callable, Literal, Optional, Type
+from types import UnionType
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Sequence,
+    Tuple,
+    Type,
+    Union,
+)
 
 from xntricweb.xapi.utility import coalesce
 
@@ -12,43 +25,133 @@ from .utility import _get_origin_args
 from .xapi_docstring_parser import DocInfo
 
 
+@dataclass
+class _ParserTranslationContext:
+    argument: Argument
+    parser_args: List[Any]
+    parser_kwargs: Dict[str, Any]
+
+    origin: Optional[Type | UnionType] = None
+    origin_params: Optional[Tuple[Type | UnionType]] = None
+
+
 # entrypoint_parsers: dict[Entrypoint, argparse.ArgumentParser] = {}
 
+_Translator = Callable[[_ParserTranslationContext], bool]
 
-def default_translator(arg, origin, _, args, kwargs):
+
+def default_translator(_):
     pass
 
 
-def literal_translator(arg, origin, literals, args, kwargs):
-    if len(literals) > 1:
-        kwargs["choices"] = list(literals)
-    elif len(literals) == 1:
+def literal_translator(ctx: _ParserTranslationContext):
+
+    if len(ctx.origin_params) > 1:
+        ctx.parser_kwargs["choices"] = list(ctx.origin_params)
+    elif len(ctx.origin_params) == 1:
         raise AttributeError("single Literal option not supported")
-    #     raise TypeError("Literal with single value is not supported")
-    #     kwargs["const"] = literals[0]
-    #     kwargs["action"] = "store_const"
     else:
         raise TypeError("Cannot translate empty literal expression.")
 
 
-def bool_translator(arg, origin, _, args, kwargs):
-    state = coalesce(arg.default, True)
-    kwargs["action"] = f"store_{str(state).lower()}"
+def bool_translator(ctx: _ParserTranslationContext):
+    state = coalesce(ctx.argument.default, True)
+    ctx.parser_kwargs["action"] = f"store_{str(state).lower()}"
 
 
-def list_translator(arg, origin, _, args, kwargs):
-    kwargs["nargs"] = "*"
+def list_translator(ctx: _ParserTranslationContext):
+    ctx.parser_kwargs["nargs"] = "*"
 
 
-def tuple_translator(arg, origin, terms, args, kwargs):
-    if terms:
-        kwargs["nargs"] = len(terms)
+def tuple_translator(ctx: _ParserTranslationContext):
+    if ctx.origin_params:
+        ctx.parser_kwargs["nargs"] = len(ctx.origin_params)
     else:
-        kwargs["nargs"] = "*"
+        ctx.parser_kwargs["nargs"] = "*"
 
 
-def enum_translator(arg, origin, terms, args, kwargs):
-    kwargs["choices"] = [k for k in vars(origin) if not k[0] == "_"]
+def enum_translator(ctx: _ParserTranslationContext):
+    enum_choices = [k for k in vars(ctx.origin) if not k[0] == "_"]
+    ctx.parser_kwargs["choices"] = enum_choices
+
+
+def union_translator(ctx: _ParserTranslationContext):
+    for type in ctx.origin_params:
+        origin, origin_params = _get_origin_args(type)
+        sub_ctx = _ParserTranslationContext(
+            argument=ctx.argument,
+            origin=origin,
+            origin_params=origin_params,
+            parser_args=[],
+            parser_kwargs={},
+        )
+
+        _translate(sub_ctx)
+
+        # TODO: check arg compatibility with existing args
+
+        ctx.parser_args.extend(sub_ctx.parser_args)
+        ctx.parser_kwargs.update(sub_ctx.parser_kwargs)
+
+
+_translators = {
+    Union: union_translator,
+    UnionType: union_translator,
+    Literal: literal_translator,
+    list: list_translator,
+    tuple: tuple_translator,
+    bool: bool_translator,
+    Enum: enum_translator,
+}
+
+
+def _get_translator(
+    origin, default: Optional[_Translator] = None
+) -> _Translator | None:
+    translator = _translators.get(origin, None)
+    if not translator:
+        log.debug("searching base translators for origin: %r", origin)
+        if not hasattr(origin, "__bases__"):
+            log.debug("found %r class for origin %r", origin.__class__, origin)
+            origin = origin.__class__
+
+        for base in reversed(origin.__bases__):
+            translator = _translators.get(base, None)
+            if translator:
+                log.debug(
+                    "found translator for base %r for origin %r", base, origin
+                )
+                break
+
+    return translator or default
+
+
+def _translate(ctx: _ParserTranslationContext):
+    if not ctx.origin:
+        if ctx.argument.vararg:
+            origin = list
+            origin_args = (ctx.argument.annotation,)
+        else:
+            origin, origin_args = _get_origin_args(ctx.argument.annotation)
+        ctx.origin = origin
+        ctx.origin_params = origin_args
+
+    translator = _get_translator(ctx.origin, default_translator)
+
+    log.debug(
+        "translating %r argument using translator %r with origin: %r[%r]",
+        ctx.argument.name,
+        translator.__name__,
+        ctx.origin,
+        ctx.origin_params,
+    )
+    translator(ctx)
+    log.debug(
+        "translated %r argument to parser args: %r, %r",
+        ctx.argument.name,
+        ctx.parser_args,
+        ctx.parser_kwargs,
+    )
 
 
 class XAPI:
@@ -56,30 +159,9 @@ class XAPI:
     def __init__(self):
         self.effects: list[Entrypoint] = []
         self.entrypoints: list[Entrypoint] = []
-        self.translators = {
-            bool: bool_translator,
-            list: list_translator,
-            tuple: tuple_translator,
-            Literal: literal_translator,
-            Enum: enum_translator,
-        }
 
     def dashed_name(self, name: str):
         return name.replace("_", "-")
-
-    def get_translator(self, origin):
-
-        translator = self.translators.get(origin, None)
-        if not translator:
-            if not hasattr(origin, "__bases__"):
-                origin = origin.__class__
-
-            for base in reversed(origin.__bases__):
-                translator = self.translators.get(base)
-                if translator:
-                    break
-
-        return translator or default_translator
 
     def entrypoint(
         self,
@@ -91,17 +173,24 @@ class XAPI:
         deprecated=False,
         **kwargs,
     ):
+        log.debug("setting up new entrypoint %r", entrypoint)
+
         def wrap(fn: Callable | Entrypoint = None):
             if isinstance(fn, Entrypoint):
+                log.debug("using previously created entrypoint %r", fn)
                 _entrypoint = fn
 
             elif type(fn) is type and issubclass(fn, Entrypoint):
-                log.debug("setting up decorated class entrypoint")
+                log.debug("setting up entrypoint subclass %r", fn)
                 _entrypoint = fn(**kwargs)
 
             elif isinstance(fn, Callable):
+                log.debug("building entrypiont from callable: %r", fn)
                 _entrypoint = Entrypoint.from_function(fn, **kwargs)
             else:
+                log.debug(
+                    "not sure what's happening with %r, just using kwargs", fn
+                )
                 _entrypoint = Entrypoint(**kwargs)
 
             if not _entrypoint.parent:
@@ -207,16 +296,9 @@ class XAPIExecutor:
         if argument.aliases:
             args.extend(argument.aliases)
 
-        if argument.vararg:
-            origin = list
-            origin_args = (argument.annotation,)
-        else:
-            origin, origin_args = _get_origin_args(argument.annotation)
+        ctx = _ParserTranslationContext(argument, args, kwargs)
 
-        translator = self.xapi.get_translator(origin)
-
-        log.debug(f"using {translator.__name__} for argument translation")
-        translator(argument, origin, origin_args, args, kwargs)
+        _translate(ctx)
 
         return args, kwargs
 

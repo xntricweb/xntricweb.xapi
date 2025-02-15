@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from types import UnionType
 from typing import Any, Callable, Literal, Optional, Union
 
 from xntricweb.xapi.utility import _get_origin_args
 
 from .const import NOT_SPECIFIED, log
+from inspect import Parameter
 
 
 @dataclass
@@ -70,12 +72,15 @@ class Argument:
 
         log.debug("no call args generated for %r with value %r", self, _value)
 
-    def __repr__(self):
-        return f"{self.__class__.__name__}({', '.join([
-            f'{k}={v}'
-            for k, v in vars(self).items()
-            if not (v is None or v is NOT_SPECIFIED or k[0] == ('_'))
-        ])})"
+    # def __repr__(self):
+    #     parts = [
+    #         f"{k}={v}"
+    #         for k, v in vars(self).items()
+    #         if k != "default" and not (v is None or k[0] == ("_"))
+    #     ]
+    #     if self.default is not NOT_SPECIFIED:
+    #         parts.append(f"default={self.default}")
+    #     return f"{self.__class__.__name__}({', '.join(parts)})"
 
 
 class ConversionError(TypeError):
@@ -84,7 +89,7 @@ class ConversionError(TypeError):
 
 def default_type_converter(value, origin, origin_args, **_):
     log.debug(
-        "using default type cconverter for %r with %r%r",
+        "using default type converter for %r with %r%r",
         value,
         origin,
         origin_args,
@@ -120,6 +125,13 @@ def iterable_type_converter(value, origin, origin_args, **_):
             ]
         )
     else:
+        if value is None:
+            _v = _convert(value, origin_args[0])
+            if _v:
+                return [_v]
+            return None
+
+            # return [_convert(value, origin_args)]
         return origin(
             [_convert(sub_value, origin_args[0]) for sub_value in value]
         )
@@ -134,7 +146,8 @@ def literal_type_converter(value, origin, origin_args, **_):
 def union_type_converter(value, origin, origin_args, annotation, **_):
     for _type in origin_args:
         try:
-            return _type(value)
+            return _convert(value, _type)
+            # return _type(value)
         except Exception:
             pass
 
@@ -143,6 +156,7 @@ def union_type_converter(value, origin, origin_args, annotation, **_):
 
 type_converters = {
     Union: union_type_converter,
+    UnionType: union_type_converter,
     Literal: literal_type_converter,
     list: iterable_type_converter,
     tuple: iterable_type_converter,
@@ -151,7 +165,7 @@ type_converters = {
 
 
 def _convert(value, annotation):
-    if not annotation:
+    if not annotation or annotation is None.__class__:
         return value
 
     origin, origin_args = _get_origin_args(annotation)
@@ -170,8 +184,9 @@ def _convert(value, annotation):
         converter = default_type_converter
 
     log.debug(
-        "converting value '%r' with origin: %r, args: %r",
+        "converting value '%r' using %r with origin: %r, args: %r",
         value,
+        converter.__name__,
         origin,
         origin_args,
     )

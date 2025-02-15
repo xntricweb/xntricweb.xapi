@@ -5,6 +5,9 @@ def _get_origin_args(type):
     if hasattr(type, "__origin__"):
         return type.__origin__, type.__args__
 
+    if not hasattr(type, "__bases__") and hasattr(type, "__args__"):
+        return type.__class__, type.__args__
+
     return type, None
 
 
