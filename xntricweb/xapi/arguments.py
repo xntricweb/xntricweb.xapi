@@ -144,6 +144,9 @@ def literal_type_converter(value, origin, origin_args, **_):
 
 
 def union_type_converter(value, origin, origin_args, annotation, **_):
+    if value is None and None.__class__ in origin_args:
+        return None
+
     for _type in origin_args:
         try:
             return _convert(value, _type)

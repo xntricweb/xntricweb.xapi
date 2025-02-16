@@ -22,6 +22,18 @@ def test_no_args():
     assert xapi.run(["case"]) == 32423
 
 
+def test_optional_string():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(value: Optional[str] = None):
+        assert_called_once(case)
+        return value
+
+    assert xapi.run("case --value abc".split(" ")) == "abc"
+    assert xapi.run("case".split(" ")) is None
+
+
 def test_basic_arg():
     xapi = XAPI()
 
@@ -272,3 +284,43 @@ def test_enum():
 
     assert xapi.run("case --value c".split(" "), exit_on_error=False) == "c"
     assert xapi.run("case".split(" "), exit_on_error=False) == "b"
+
+
+def test_class_optional():
+    xapi = XAPI()
+
+    class TestCase:
+        def __init__(self, text: str):
+            if text is None:
+                raise TypeError("text is a required parameter")
+            self.test_data = text
+
+    @xapi.entrypoint
+    def case(value: Optional[TestCase] = None):
+        if not value:
+            return None
+
+        return value
+
+    assert xapi.run("case --value blah".split(" ")).test_data == "blah"
+    assert xapi.run("case".split(" ")) is None
+
+
+def test_class_default():
+    xapi = XAPI()
+
+    class TestCase:
+        def __init__(self, text: str):
+            if text is None:
+                raise TypeError("text is a required parameter")
+            self.test_data = text
+
+    @xapi.entrypoint
+    def case(value: Optional[TestCase] = None):
+        if not value:
+            return None
+
+        return value
+
+    assert xapi.run("case --value blah".split(" ")).test_data == "blah"
+    assert xapi.run("case".split(" ")) is None
