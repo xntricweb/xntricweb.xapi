@@ -1,3 +1,4 @@
+from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
 
@@ -44,6 +45,21 @@ def test_basic_arg():
 
     assert xapi.run(["case", "--value", "abc"], exit_on_error=False) == "abc"
     assert xapi.run(["case"], exit_on_error=False) == "5"
+
+
+def test_datetime():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(value: Optional[datetime] = None):
+        assert_called_once(case)
+        return value and value.isoformat()
+
+    assert (
+        xapi.run(["case", "--value", "2025-02-16T22:00"], exit_on_error=False)
+        == "2025-02-16T22:00:00"
+    )
+    assert xapi.run(["case"], exit_on_error=False) is None
 
 
 def test_annotated_arg():

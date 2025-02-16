@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from types import UnionType
 from typing import Any, Callable, Literal, Optional, Union
 
@@ -89,7 +90,7 @@ class ConversionError(TypeError):
 
 def default_type_converter(value, origin, origin_args, **_):
     log.debug(
-        "using default type converter for %r with %r%r",
+        "using default type converter for %r with %r[%r]",
         value,
         origin,
         origin_args,
@@ -143,6 +144,10 @@ def literal_type_converter(value, origin, origin_args, **_):
     raise TypeError(f"Expected {origin_args} found '{value}'")
 
 
+def datetime_type_converter(value, origin, origin_args, **_):
+    return datetime.fromisoformat(value)
+
+
 def union_type_converter(value, origin, origin_args, annotation, **_):
     if value is None and None.__class__ in origin_args:
         return None
@@ -163,6 +168,7 @@ type_converters = {
     Literal: literal_type_converter,
     list: iterable_type_converter,
     tuple: iterable_type_converter,
+    datetime: datetime_type_converter,
     function_type_converter.__class__.__base__: function_type_converter,
 }
 
