@@ -9,13 +9,10 @@ from typing import (
     List,
     Literal,
     Optional,
-    Sequence,
     Tuple,
     Type,
     Union,
 )
-
-from xntricweb.xapi.utility import coalesce
 
 from .arguments import Argument, ConversionError
 from .entrypoint import Entrypoint
@@ -244,26 +241,37 @@ class XAPI:
         self,
         argv: list[str] | None = None,
         namespace: argparse.Namespace | None = None,
+        effect_parser: argparse.ArgumentParser | None = None,
         root_parser: argparse.ArgumentParser | None = None,
         **parser_args,
     ):
-        if not root_parser:
-            root_parser = argparse.ArgumentParser(**parser_args)
+        if not effect_parser:
+            effect_parser = argparse.ArgumentParser(add_help=False)
 
-        executor = XAPIExecutor(self, root_parser=root_parser)
+        if not root_parser:
+            root_parser = argparse.ArgumentParser(
+                parents=[effect_parser], **parser_args
+            )
+
+        executor = XAPIExecutor(
+            self, root_parser=root_parser, effect_parser=effect_parser
+        )
         return executor.run(argv, namespace)
 
 
 class XAPIExecutor:
-    def __init__(self, xapi: XAPI, root_parser: argparse.ArgumentParser):
+    def __init__(
+        self,
+        xapi: XAPI,
+        root_parser: argparse.ArgumentParser,
+        effect_parser: argparse.ArgumentParser,
+    ):
         self.xapi = xapi
-        self.effect_parser = argparse.ArgumentParser(add_help=False)
+        self.effect_parser = effect_parser
+        self.root_parser = root_parser
         self.parsers: dict[Entrypoint, argparse.ArgumentParser] = {}
 
         self.setup_effects()
-        self.root_parser = argparse.ArgumentParser(
-            parents=[self.effect_parser]
-        )
 
         self.setup_entrypoints(
             entrypoints=self.xapi.entrypoints,

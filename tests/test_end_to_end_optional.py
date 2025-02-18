@@ -164,7 +164,7 @@ def test_tuple_typed():
         xapi.run("case --value abc 123".split(" "), exit_on_error=False)
         == "abc:123"
     )
-    assert xapi.run("case".split(" "), exit_on_error=False) == None
+    assert xapi.run("case".split(" "), exit_on_error=False) is None
 
 
 def test_literal_single():

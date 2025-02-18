@@ -10,6 +10,7 @@ import argparse
 
 # from argparse import ArgumentParser
 
+mock_EffectParser = mocks.MagicMock()
 mock_ArgumentParser = mocks.MagicMock()
 mock_ArgumentParser.prefix_chars = ["-"]
 
@@ -19,7 +20,7 @@ mocks.patch("argparse.ArgumentParser", mock_ArgumentParser)
 mock_parser = SimpleNamespace(prefix_chars="-")
 
 
-_executor = XAPIExecutor(XAPI(), mock_ArgumentParser)
+_executor = XAPIExecutor(XAPI(), mock_ArgumentParser, mock_EffectParser)
 
 
 def gen(arg):
