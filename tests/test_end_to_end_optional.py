@@ -1,3 +1,4 @@
+import argparse
 from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
@@ -233,8 +234,11 @@ def test_boolean_default_true():
         assert_called_once(case)
         return value
 
-    with pytest.raises(SystemExit):
-        assert xapi.run("case --value true".split(" ")) is True
+    with pytest.raises(argparse.ArgumentError):
+        assert (
+            xapi.run("case --value true".split(" "), exit_on_error=False)
+            is True
+        )
 
     assert xapi.run("case --value".split(" "), exit_on_error=False) is False
 
@@ -396,9 +400,16 @@ def test_unexpected_kwargs():
     xapi = XAPI()
 
     @xapi.entrypoint
+    def not_called_case(**kwargs):
+        raise AssertionError("should not have been called")
+
+    @xapi.entrypoint
     def case():
         assert_called_once(case)
         return "called"
 
-    with pytest.raises(SystemExit):
-        assert xapi.run("case --value blahblahblah --strip 2".split(" "))
+    with pytest.raises(argparse.ArgumentError):
+        assert xapi.run(
+            "case --value blahblahblah --strip 2".split(" "),
+            exit_on_error=False,
+        )

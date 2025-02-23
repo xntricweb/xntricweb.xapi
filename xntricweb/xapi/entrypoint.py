@@ -33,6 +33,12 @@ class Entrypoint:
     def has_required_arguments(self):
         return any([arg.required for arg in self.arguments])
 
+    @property
+    def has_kwargs(self):
+        return any(
+            [arg.vararg and arg.index is None for arg in self.arguments]
+        )
+
     def __key(self):
         return (
             self.name,

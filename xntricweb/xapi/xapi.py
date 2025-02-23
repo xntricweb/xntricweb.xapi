@@ -277,6 +277,7 @@ class XAPIExecutor:
         self.root_parser = root_parser
         self.parsers: dict[Entrypoint, argparse.ArgumentParser] = {}
         self.accept_kwargs = False
+        self.effect_kwargs = False
 
         self.setup_effects()
 
@@ -373,6 +374,8 @@ class XAPIExecutor:
                 self.effect_parser,
                 DocInfo(entrypoint.entrypoint),
             )
+            if entrypoint.has_kwargs:
+                self.effect_kwargs = True
 
         log.debug("finished setting up %r effects", len(entrypoints))
 
@@ -506,11 +509,18 @@ class XAPIExecutor:
 
         kwargs = self._collect_kwargs(raw_kwargs)
         log.debug("collected extra kwargs: %r", kwargs)
+        entrypoint = self._get_namespace_entrypoint(namespace)
+
+        if kwargs and not self.effect_kwargs and not entrypoint.has_kwargs:
+            message = f"unrecognized arguments: {kwargs}"
+            if self.root_parser.exit_on_error:
+                self.root_parser.error(message)
+            else:
+                raise argparse.ArgumentError(None, message)
 
         for effect in self.xapi.effects:
             self._call_entrypoint(effect, namespace, kwargs)
 
-        entrypoint = self._get_namespace_entrypoint(namespace)
         if not entrypoint:
             self._print_and_exit(
                 self.root_parser,
