@@ -340,3 +340,65 @@ def test_class_default():
 
     assert xapi.run("case --value blah".split(" ")).test_data == "blah"
     assert xapi.run("case".split(" ")) is None
+
+
+def test_kwargs():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(**kwargs):
+        assert_called_once(case)
+        return kwargs
+
+    assert xapi.run("case --value blahblahblah --strip 2".split(" ")) == {
+        "value": "blahblahblah",
+        "strip": "2",
+    }
+
+
+def test_kwargs_with_args():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(*args, **kwargs):
+        assert_called_once(case)
+        return kwargs | {"args": list(args)}
+
+    assert xapi.run(
+        "case 1 2 3 --value blahblahblah --strip 2".split(" ")
+    ) == {
+        "value": "blahblahblah",
+        "strip": "2",
+        "args": ["1", "2", "3"],
+    }
+
+
+def test_kwargs_with_other_args():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case(a, *args, x=5, **kwargs):
+        assert_called_once(case)
+        return kwargs | {"a": a, "args": list(args), "x": x}
+
+    assert xapi.run(
+        "case 10 1 2 3 --value blahblahblah --strip 2".split(" ")
+    ) == {
+        "value": "blahblahblah",
+        "strip": "2",
+        "a": "10",
+        "args": ["1", "2", "3"],
+        "x": 5,
+    }
+
+
+def test_unexpected_kwargs():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def case():
+        assert_called_once(case)
+        return "called"
+
+    with pytest.raises(SystemExit):
+        assert xapi.run("case --value blahblahblah --strip 2".split(" "))

@@ -111,25 +111,33 @@ class Entrypoint:
 
         self.entrypoints.append(entrypoint)
 
-    def generate_call_args(self, params: dict[str, Any]):
+    def generate_call_args(
+        self, params: dict[str, Any], raw_kw: dict[str, str]
+    ):
         args = []
         kwargs = {}
         for arg in self.arguments:
-            value = params.get(arg.name, arg.default)
+            if arg.index is None and arg.vararg:
+                value = raw_kw
+            else:
+                value = params.get(arg.name, arg.default)
+
             arg.generate_call_arg(value, args, kwargs)
 
         return args, kwargs
 
-    def execute(self, params: dict[str, Any], executor):
+    def execute(
+        self, params: dict[str, Any], raw_kwargs: dict[str, str], executor
+    ):
         if self.parent:
-            self.parent.execute(params)
+            self.parent.execute(params, raw_kwargs, executor)
 
         if not self.entrypoint:
             raise AttributeError(
                 "Nothing to do for entrypoint: %s" % self.name
             )
 
-        arg, kwargs = self.generate_call_args(params)
+        arg, kwargs = self.generate_call_args(params, raw_kwargs)
         return self.entrypoint(*arg, **kwargs)
 
     def _get_argument(self, name: str | None, index: int):
@@ -172,7 +180,9 @@ class Entrypoint:
         ])})"
 
 
-def _get_inpect_arg_detail(index, param: inspect.Parameter):
+def _get_inspect_arg_detail(index, param: inspect.Parameter):
+    print(param.kind)
+    log.debug("generating details for parameter inspection: %r", param)
 
     detail = _make_detail(
         index=(
@@ -227,7 +237,7 @@ def _get_fn_details(fn: Callable):
 def _get_inspect_arg_details(params: list[inspect.Parameter]):
 
     return [
-        _get_inpect_arg_detail(index, param)
+        _get_inspect_arg_detail(index, param)
         for index, param in enumerate(params)
     ]
 

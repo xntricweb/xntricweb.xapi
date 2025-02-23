@@ -17,7 +17,7 @@ from typing import (
 from .arguments import Argument, ConversionError
 from .entrypoint import Entrypoint
 
-from .const import log
+from .const import log, NOT_SPECIFIED
 from .utility import _get_origin_args
 from .xapi_docstring_parser import DocInfo
 
@@ -127,8 +127,14 @@ def _get_translator(
 def _translate(ctx: _ParserTranslationContext):
     if not ctx.origin:
         if ctx.argument.vararg:
-            origin = list
-            origin_args = (ctx.argument.annotation,)
+            if ctx.argument.index is not None:
+                origin = list
+                origin_args = (ctx.argument.annotation,)
+            else:
+                ctx.parser_kwargs["action"] = "store_const"
+                ctx.parser_kwargs["const"] = "KWARG"
+                # ctx.parser_kwargs["nargs"] = 0
+                return
         else:
             origin, origin_args = _get_origin_args(ctx.argument.annotation)
         ctx.origin = origin
@@ -270,6 +276,7 @@ class XAPIExecutor:
         self.effect_parser = effect_parser
         self.root_parser = root_parser
         self.parsers: dict[Entrypoint, argparse.ArgumentParser] = {}
+        self.accept_kwargs = False
 
         self.setup_effects()
 
@@ -280,6 +287,7 @@ class XAPIExecutor:
         )
 
     def get_argument_args(self, argument: Argument):
+        log.debug("retrieving argument args for argument: %r", argument)
         if argument.name is None:
             raise AttributeError(
                 "Name is required for argument: %r" % argument
@@ -293,11 +301,17 @@ class XAPIExecutor:
         if argument.metavar:
             kwargs["metavar"] = argument.metavar
 
-        if not argument.required or argument.annotation is bool:
+        if (
+            argument.default is not NOT_SPECIFIED
+            or (argument.vararg and argument.index is None)
+            or argument.annotation is bool
+        ):
+            # if not argument.required or argument.annotation is bool:
             dashed_name = self.xapi.dashed_name(argument.name)
             if argument.name != dashed_name:
                 kwargs["dest"] = argument.name
-            kwargs["default"] = argument.default
+            if argument.default is not NOT_SPECIFIED:
+                kwargs["default"] = argument.default
             args = [f"{'-' * 2}{dashed_name}"]
         else:
             args = [argument.name]
@@ -318,6 +332,9 @@ class XAPIExecutor:
         parser: argparse.ArgumentParser,
         doc_info: DocInfo,
     ):
+        if argument.vararg and argument.index is None:
+            self.accept_kwargs = True
+
         log.debug("setting up argument for parser: %r", argument)
         args, kwargs = self.get_argument_args(argument)
         kwargs |= doc_info.get_argument_doc_info(index)
@@ -436,15 +453,62 @@ class XAPIExecutor:
             )
         log.debug("finished setting up entrypoint: %r", entrypoint)
 
+    def _collect_kwargs(self, raw_kwargs: list[str], default: Any = ""):
+        print(raw_kwargs)
+        result: dict[str, Any | List[Any]] = {}
+        positional = []
+        key = None
+        for arg in raw_kwargs:
+            print(key, arg)
+            if arg.startswith("--"):
+                if key and result.get(key, None) is None:
+                    result[key] = default
+
+                key = arg.lstrip("-")
+                # result[key] = default
+                continue
+
+            if not key:
+                positional.append(arg)
+                continue
+
+            cv = result.get(key, None)
+            if hasattr(cv, "append"):
+                cv.append(arg)
+            elif cv is not None:
+                result[key] = [cv, arg]
+            else:
+                result[key] = arg
+
+        if positional:
+            raise UserWarning(
+                "Found unexpected positional args %r", positional
+            )
+        return result
+
     def run(
         self,
         argv: list[str] | None = None,
         namespace: argparse.Namespace | None = None,
     ):
-        namespace = self.root_parser.parse_args(argv, namespace)
+        log.debug("Running xapi executor on args: %r", argv)
+        if self.accept_kwargs:
+            namespace, raw_kwargs = self.root_parser.parse_known_args(
+                argv, namespace
+            )
+        else:
+            namespace = self.root_parser.parse_args(argv, namespace)
+            raw_kwargs = {}
+
+        log.debug(
+            "processing namespace: %r, unused: %r", namespace, raw_kwargs
+        )
+
+        kwargs = self._collect_kwargs(raw_kwargs)
+        log.debug("collected extra kwargs: %r", kwargs)
 
         for effect in self.xapi.effects:
-            self._call_entrypoint(effect, namespace)
+            self._call_entrypoint(effect, namespace, kwargs)
 
         entrypoint = self._get_namespace_entrypoint(namespace)
         if not entrypoint:
@@ -454,7 +518,7 @@ class XAPIExecutor:
                 "Entrypoint not found in command %s" % namespace,
             )
 
-        return self._call_entrypoint(entrypoint, namespace)
+        return self._call_entrypoint(entrypoint, namespace, kwargs)
 
     def _get_namespace_entrypoint(
         self, namespace: argparse.Namespace
@@ -466,11 +530,15 @@ class XAPIExecutor:
         )
 
     def _call_entrypoint(
-        self, entrypoint: Entrypoint, namespace: argparse.Namespace
+        self,
+        entrypoint: Entrypoint,
+        namespace: argparse.Namespace,
+        kwargs: Dict[str, str],
     ):
         log.debug("executing entrypoint: %r", entrypoint)
+
         try:
-            return entrypoint.execute(vars(namespace), self)
+            return entrypoint.execute(vars(namespace), kwargs, self)
         except AttributeError as e:
             self._print_and_exit(
                 self.parsers.get(entrypoint, None), 20, str(e)

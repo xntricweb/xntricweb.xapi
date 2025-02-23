@@ -1,6 +1,7 @@
 from typing import Literal
 
 import pytest
+from xntricweb.xapi.const import NOT_SPECIFIED
 from xntricweb.xapi.xapi import XAPIExecutor, XAPI
 from xntricweb.xapi.arguments import Argument
 from types import SimpleNamespace
@@ -72,7 +73,7 @@ def test_positional():
             (["metavar"], _d(metavar="metavar text")),
         ),
         (
-            Argument("varargs", vararg=True),
+            Argument("varargs", index=0, vararg=True),
             (["varargs"], _d(nargs="*")),
         ),
         (
@@ -102,8 +103,9 @@ def test_positional():
         assert actual == expected
 
 
-def test_optional():
-    cases = [
+@pytest.mark.parametrize(
+    argnames="case, expected",
+    argvalues=[
         (Argument("named", default=None), (["--named"], _dd())),
         (
             Argument("name_underscored", default=None),
@@ -129,36 +131,37 @@ def test_optional():
             (["--metavar"], _dd(metavar="metavar text")),
         ),
         (
-            Argument("varargs", vararg=True, default=None),
-            (["--varargs"], _dd(nargs="*")),
+            Argument("varargs", vararg=True),
+            (
+                ["--varargs"],
+                _d(action="store_const", const="KWARG"),
+            ),
         ),
         (
             Argument(
                 "all_together",
                 annotation=int,
-                index=0,
                 vararg=True,
                 aliases=["at"],
                 help="all together help",
                 metavar="all together metavar",
-                default=None,
             ),
             (
                 ["--all-together", "at"],
-                _dd(
+                _d(
                     help="all together help",
                     metavar="all together metavar",
                     dest="all_together",
-                    nargs="*",
+                    action="store_const",
+                    const="KWARG",
                 ),
             ),
         ),
-    ]
-
-    for case, expected in cases:
-        actual = gen(case)
-        print(actual)
-        assert actual == expected
+    ],
+)
+def test_optional(case, expected):
+    actual = gen(case)
+    assert actual == expected
 
 
 def test_special_annotations():
@@ -192,62 +195,62 @@ def test_special_annotations():
 
 test_cases_positional_setup_argument = [
     (
-        Argument("int", annotation=int),
+        Argument("int", index=0, annotation=int),
         ["1"],
         ([1], {}),
     ),
     (
-        Argument("float", annotation=float),
+        Argument("float", index=0, annotation=float),
         ["1.933"],
         ([1.933], {}),
     ),
     (
-        Argument("string", annotation=str),
+        Argument("string", index=0, annotation=str),
         ["2"],
         (["2"], {}),
     ),
     (
-        Argument("vararg", vararg=True),
+        Argument("vararg", index=0, vararg=True),
         "abcdef".split(),
         ([*("abcdef".split())], {}),
     ),
     (
-        Argument("vararg_int", annotation=int, vararg=True),
+        Argument("vararg_int", index=0, annotation=int, vararg=True),
         list(map(str, range(10))),
         ([*range(10)], {}),
     ),
     (
-        Argument("list_strings", annotation=list[str]),
+        Argument("list_strings", index=0, annotation=list[str]),
         "abcdef".split(),
         (["abcdef".split()], {}),
     ),
     (
-        Argument("list_ints", annotation=list[int]),
+        Argument("list_ints", index=0, annotation=list[int]),
         list(map(str, range(10))),
         ([list(range(10))], {}),
     ),
     (
-        Argument("list_unspecified", annotation=list),
+        Argument("list_unspecified", index=0, annotation=list),
         list(map(str, range(10))),
         ([list(map(str, range(10)))], {}),
     ),
     (
-        Argument("list_empty", annotation=list[str]),
+        Argument("list_empty", index=0, annotation=list[str]),
         [],
         ([[]], {}),
     ),
     (
-        Argument("tuple", annotation=tuple[str, int]),
+        Argument("tuple", index=0, annotation=tuple[str, int]),
         ["1", "2"],
         ([("1", 2)], {}),
     ),
     (
-        Argument("tuple_unspecified", annotation=tuple),
+        Argument("tuple_unspecified", index=0, annotation=tuple),
         ["1", "2"],
         ([("1", "2")], {}),
     ),
     (
-        Argument("tuple_unspecified_empty", annotation=tuple),
+        Argument("tuple_unspecified_empty", index=0, annotation=tuple),
         [],
         ([tuple()], {}),
     ),

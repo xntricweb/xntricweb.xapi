@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import json
 from types import UnionType
 from typing import Any, Callable, Literal, Optional, Union
 
@@ -46,32 +47,67 @@ class Argument:
     help: Optional[str] = None
     metavar: Optional[str] = None
 
-    @property
-    def required(self):
-        return self.default is NOT_SPECIFIED
-
     def generate_call_arg(
-        self, value: Any, args: list[Any], kwargs: dict[str, Any]
+        self,
+        value: Any,
+        args: Optional[list[Any]] = None,
+        kwargs: Optional[dict[str, Any]] = None,
     ):
+        if args is None:
+            args = []
+
+        if kwargs is None:
+            kwargs = {}
+
         log.debug("generating call args for %r with value %r", self, value)
 
         if self.vararg:
-            _value = _convert(value, list[self.annotation])
-            log.debug("generating varargs for %r with value %r", self, _value)
-            return args.extend(_value)
+            if self.index is not None:
+                _value = _convert(value, list[self.annotation])
+                log.debug(
+                    "generated varargs for %r with value %r", self, _value
+                )
+                args.extend(_value)
+                return args, kwargs
+
+            _value = _convert(value, dict)
+            log.debug("generating kwargs for %r: %r", self.name, _value)
+            kwargs.update(_value)
+            return args, kwargs
+
         _value = _convert(value, self.annotation)
-        if self.required:
+        if self.index is not None and self.default is NOT_SPECIFIED:
             log.debug(
                 "generating positional for %r with value %r", self, _value
             )
-            return args.append(_value)
+            args.append(_value)
+            return args, kwargs
 
         if _value != self.default:
-            log.debug("generating kwargs for %r with value %r", self, _value)
+
+            log.debug(
+                "generating kwarg for %r with value %r", self.name, _value
+            )
             kwargs[self.name] = _value
-            return
+            return args, kwargs
 
         log.debug("no call args generated for %r with value %r", self, _value)
+        return args, kwargs
+
+    def __str__(self):
+        r = ""
+        if self.vararg:
+            if self.index is None:
+                r += "**"
+            else:
+                r += "*"
+
+        r += self.name
+        if self.annotation:
+            r += f":{self.annotation}"
+        if self.default is not NOT_SPECIFIED:
+            r += f"={repr(self.default)}"
+        return r
 
     # def __repr__(self):
     #     parts = [
@@ -162,10 +198,23 @@ def union_type_converter(value, origin, origin_args, annotation, **_):
     raise ValueError("Unable to convert value %s" % value)
 
 
+def dict_type_converter(value, origin, origin_args, annotation, **_):
+    if value is None and None.__class__ in origin_args:
+        return None
+
+    if value is str:
+        value = json.loads(value)
+
+    if not origin_args:
+        return default_type_converter(value, origin, origin_args)
+    raise NotImplementedError()
+
+
 type_converters = {
     Union: union_type_converter,
     UnionType: union_type_converter,
     Literal: literal_type_converter,
+    dict: dict_type_converter,
     list: iterable_type_converter,
     tuple: iterable_type_converter,
     datetime: datetime_type_converter,
@@ -173,21 +222,37 @@ type_converters = {
 }
 
 
-def _convert(value, annotation):
-    if not annotation or annotation is None.__class__:
-        return value
-
-    origin, origin_args = _get_origin_args(annotation)
+def _get_converter(origin, default=None):
+    base = None
     converter = type_converters.get(origin, None)
     if not converter:
-        log.debug("converter not found for origin: %r", origin)
+        log.debug("searching base converters for origin: %r", origin)
+        # log.debug("converter not found for origin: %r", origin)
         if not hasattr(origin, "__bases__"):
+            log.debug("found %r class for origin %r", origin.__class__, origin)
             origin = origin.__class__
 
         for base in reversed(origin.__bases__):
             converter = type_converters.get(base)
             if converter:
+
                 break
+    log.debug(
+        "found converter %r using base %r for origin %r",
+        converter,
+        base,
+        origin,
+    )
+    return converter
+
+
+def _convert(value, annotation):
+    log.debug("Attempting conversion for %r as %r", value, annotation)
+    if not annotation or annotation is None.__class__:
+        return value
+
+    origin, origin_args = _get_origin_args(annotation)
+    converter = _get_converter(origin)
 
     if not converter:
         converter = default_type_converter
