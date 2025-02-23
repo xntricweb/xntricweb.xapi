@@ -167,6 +167,25 @@ class XAPI:
     def dashed_name(self, name: str):
         return name.replace("_", "-")
 
+    def _get_entrypoint(
+        self, name_or_alias: str, entrypoints: list[Entrypoint]
+    ):
+        for entrypoint in entrypoints:
+            if entrypoint.name == name_or_alias:
+                return entrypoint
+
+            if entrypoint.aliases and name_or_alias in entrypoint.aliases:
+                return entrypoint
+
+    def get_entrypoint(self, name_or_alias: str):
+        entrypoint = self._get_entrypoint(name_or_alias, self.entrypoints)
+        if entrypoint:
+            return entrypoint
+        entrypoint = self._get_entrypoint(name_or_alias, self.effects)
+        if entrypoint:
+            return entrypoint
+        raise KeyError(f"{name_or_alias} is not a registered entrypoint")
+
     def entrypoint(
         self,
         entrypoint: (
