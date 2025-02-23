@@ -187,7 +187,6 @@ class Entrypoint:
 
 
 def _get_inspect_arg_detail(index, param: inspect.Parameter):
-    print(param.kind)
     log.debug("generating details for parameter inspection: %r", param)
 
     detail = _make_detail(

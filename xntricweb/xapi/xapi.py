@@ -476,12 +476,10 @@ class XAPIExecutor:
         log.debug("finished setting up entrypoint: %r", entrypoint)
 
     def _collect_kwargs(self, raw_kwargs: list[str], default: Any = ""):
-        print(raw_kwargs)
         result: dict[str, Any | List[Any]] = {}
         positional = []
         key = None
         for arg in raw_kwargs:
-            print(key, arg)
             if arg.startswith("--"):
                 if key and result.get(key, None) is None:
                     result[key] = default
