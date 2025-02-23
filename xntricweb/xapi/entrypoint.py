@@ -39,6 +39,9 @@ class Entrypoint:
             [arg.vararg and arg.index is None for arg in self.arguments]
         )
 
+    def __call__(self, *args, **kwargs):
+        return self.entrypoint(*args, **kwargs)
+
     def __key(self):
         return (
             self.name,

@@ -2,6 +2,17 @@ import pytest
 from xntricweb.xapi.xapi import XAPI
 
 
+def test_entrypoint_is_callable():
+    xapi = XAPI()
+
+    @xapi.entrypoint
+    def test_callable(x: int, y: int = 2):
+        assert x == 10 and y == 2
+        return 4
+
+    assert test_callable(10) == 4
+
+
 def test_get_entrypoint():
     xapi = XAPI()
 
