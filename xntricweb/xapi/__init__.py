@@ -4,6 +4,6 @@ from .arguments import Argument
 
 __version__ = "0.1.13"
 
-__all__ = ["Entrypoint", "Argument", "setup", "XAPI"]
+__all__: list[str] = ["Entrypoint", "Argument", "XAPI"]
 
 xapi = XAPI()
