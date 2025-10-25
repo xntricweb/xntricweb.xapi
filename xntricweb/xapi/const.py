@@ -1,7 +1,10 @@
 import logging
-from typing import Any
+from types import UnionType
+from typing import Any, Type
 
 log = logging.getLogger("xntricweb.xapi")
+
+type AnyType = type | UnionType | Type[Any]
 
 
 class _NotSpecified:
