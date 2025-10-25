@@ -1,14 +1,14 @@
-from typing import Callable
+from typing import Any, Callable, Optional
 from .entrypoint import Entrypoint, root_entrypoints, root_effects
 
 
 def effect(
-    entrypoint: Entrypoint | Callable | str | None = None,
+    entrypoint: Optional[Entrypoint | Callable[..., Any] | str] = None,
     *,
-    deprecated=False,
-    **kwargs,
+    deprecated: bool = False,
+    **kwargs: Any,
 ):
-    def wrap(fn: Callable):
+    def wrap(fn: Callable[..., Any]):
         _entrypoint = Entrypoint.from_function(fn, **kwargs)
         # _entrypoint = Entrypoint(entrypoint=fn, **kwargs)
 
@@ -33,12 +33,12 @@ def effect(
 
 
 def entrypoint(
-    entrypoint: Entrypoint | Callable | str | None = None,
+    entrypoint: Entrypoint | Callable[..., Any] | str | None = None,
     *,
-    deprecated=False,
-    **kwargs,
+    deprecated: bool = False,
+    **kwargs: Any,
 ):
-    def wrap(fn: Callable = None):
+    def wrap(fn: Optional[Callable[..., Any]] = None):
         if fn:
             _entrypoint = Entrypoint.from_function(fn, **kwargs)
         else:
