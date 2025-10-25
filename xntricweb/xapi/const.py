@@ -1,13 +1,13 @@
 import logging
 from types import UnionType
-from typing import Any, Type
+from typing import Any, Callable, Type
 
 log = logging.getLogger("xntricweb.xapi")
 
-type AnyType = type | UnionType | Type[Any]
+type AnyType = type | UnionType | Type[Any] | Callable[..., Any] | None
 
 
-class _NotSpecified:
+class NotSpecified:
     __slots__: tuple[Any, ...] = tuple()
 
     def __str__(self):
@@ -17,4 +17,4 @@ class _NotSpecified:
         return "[Not Specified]"
 
 
-NOT_SPECIFIED = _NotSpecified()
+NOT_SPECIFIED = NotSpecified()

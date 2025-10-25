@@ -18,7 +18,7 @@ from .arguments import Argument, ConversionError
 from .entrypoint import Entrypoint
 
 from .const import log, NOT_SPECIFIED
-from .utility import _get_origin_args
+from .utility import get_origin_args
 from .xapi_docstring_parser import DocInfo
 
 
@@ -75,7 +75,7 @@ def enum_translator(ctx: _ParserTranslationContext):
 
 def union_translator(ctx: _ParserTranslationContext):
     for type in ctx.origin_params:
-        origin, origin_params = _get_origin_args(type)
+        origin, origin_params = get_origin_args(type)
         sub_ctx = _ParserTranslationContext(
             argument=ctx.argument,
             origin=origin,
