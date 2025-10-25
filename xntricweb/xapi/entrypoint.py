@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import inspect
-from typing import Optional, Any, Callable, Iterable
-from xntricweb.xapi.arguments import Argument
-from .const import NOT_SPECIFIED
+from typing import Optional, Any, Callable, Sequence
+
+from xntricweb.xapi.utility import coalesce, is_any
+
+from .arguments import Argument
+from .const import NOT_SPECIFIED, NotSpecified
 from .const import log
 
 root_entrypoints: list[Entrypoint] = []
@@ -24,22 +27,30 @@ class Entrypoint:
     description: Optional[str] = None
     epilog: Optional[str] = None
     usage: Optional[str] = None
-    entrypoint: Optional[Callable] = None
+    entrypoint: Optional[Callable[..., Any]] = None
     parent: Optional[Entrypoint] = None
-    arguments: Optional[Iterable[Argument]] = None
-    entrypoints: Optional[Iterable[Entrypoint]] = None
+    arguments: Optional[list[Argument[Any]]] = None
+    entrypoints: Optional[list[Entrypoint]] = None
 
     @property
     def has_required_arguments(self):
-        return any([arg.required for arg in self.arguments])
+        if not self.arguments:
+            return False
+        return any([arg.default is NotSpecified for arg in self.arguments])
 
     @property
     def has_kwargs(self):
+        if not self.arguments:
+            return False
+
         return any(
             [arg.vararg and arg.index is None for arg in self.arguments]
         )
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args: Any, **kwargs: Any):
+        if not self.entrypoint:
+            raise ValueError("Entrypoint not configured")
+
         return self.entrypoint(*args, **kwargs)
 
     def __key(self):
@@ -60,9 +71,10 @@ class Entrypoint:
     def __hash__(self):
         return hash(self.__key)
 
-    def __eq__(self, other):
-        if hasattr(other, "__key"):
-            return self.__key == other.__key
+    def __eq__(self, other: Any):
+        if other_key := getattr(other, "__key", None):
+            return self.__key() == other_key
+        return False
 
     def __post_init__(self):
 
@@ -104,13 +116,13 @@ class Entrypoint:
             else:
                 log.debug("exclude potential entrypoint %r", name)
 
-    def _init_subentrypoint(self, name):
+    def _init_subentrypoint(self, name: str):
         log.debug("initializing sub entypoint: %r", name)
         fn = getattr(self, name)
         subentrypoint = self.from_function(fn)
         self.add_subentrypoint(subentrypoint)
 
-    def add_subentrypoint(self, entrypoint):
+    def add_subentrypoint(self, entrypoint: Entrypoint):
         assert (
             not self.has_required_arguments
         ), "Entrypoint with required params cannot be used as parents"
@@ -122,24 +134,24 @@ class Entrypoint:
 
     def generate_call_args(
         self, params: dict[str, Any], raw_kw: dict[str, str]
-    ):
-        args = []
-        kwargs = {}
-        for arg in self.arguments:
-            if arg.index is None and arg.vararg:
-                value = raw_kw
-            else:
-                value = params.get(arg.name, arg.default)
+    ) -> tuple[list[Any], dict[str, Any]]:
+        args: list[Any] = []
+        kwargs: dict[str, Any] = {}
 
-            arg.generate_call_arg(value, args, kwargs)
+        if self.arguments:
+            for arg in self.arguments:
+                if arg.index is None and arg.vararg:
+                    value = raw_kw
+                else:
+                    value = params.get(arg.name, arg.default)
+
+                arg.generate_call_arg(value, args, kwargs)
 
         return args, kwargs
 
-    def execute(
-        self, params: dict[str, Any], raw_kwargs: dict[str, str], executor
-    ):
+    def execute(self, params: dict[str, Any], raw_kwargs: dict[str, str]):
         if self.parent:
-            self.parent.execute(params, raw_kwargs, executor)
+            self.parent.execute(params, raw_kwargs)
 
         if not self.entrypoint:
             raise AttributeError(
@@ -149,31 +161,17 @@ class Entrypoint:
         arg, kwargs = self.generate_call_args(params, raw_kwargs)
         return self.entrypoint(*arg, **kwargs)
 
-    def _get_argument(self, name: str | None, index: int):
-        if not self.arguments:
-            self.arguments = []
-
-        if index >= 0 and index < len(self.arguments):
-            return self.arguments[index]
-
-        if name is not None:
-            for arg in self.arguments:
-                if arg.name == name:
-                    return arg
-
-        arg = Argument(name=name, index=index)
-        self.arguments.append(arg)
-        return arg
-
     @staticmethod
-    def from_function(fn, **overrides):
-        details = _get_fn_details(fn)
+    def from_function(fn: Callable[..., Any], **overrides: Any):
+        details: dict[str, Any] = _get_fn_details(fn)
         spec = inspect.signature(fn)
         return Entrypoint(
             entrypoint=fn,
             arguments=[
                 Argument(**info)
-                for info in _get_inspect_arg_details(spec.parameters.values())
+                for info in _get_inspect_arg_details(
+                    list(spec.parameters.values())
+                )
             ],
             **(details | overrides),
         )
@@ -189,7 +187,7 @@ class Entrypoint:
         ])})"
 
 
-def _get_inspect_arg_detail(index, param: inspect.Parameter):
+def _get_inspect_arg_detail(index: int | None, param: inspect.Parameter):
     log.debug("generating details for parameter inspection: %r", param)
 
     detail = _make_detail(
@@ -204,36 +202,26 @@ def _get_inspect_arg_detail(index, param: inspect.Parameter):
             else None
         ),
         name=param.name,
-        annotation=(
-            (param.annotation if param.annotation is not param.empty else None)
-            or (
-                (
-                    param.default
-                    and param.default is not param.empty
-                    and param.default is not NOT_SPECIFIED
-                    and type(param.default)
-                )
-            )
-            or None
+        annotation=coalesce(
+            param.annotation,
+            # param.default,
+            None,
+            also_is_not=[param.empty, NOT_SPECIFIED],
         ),
-        default=(
-            param.default
-            if param.default is not param.empty
-            else NOT_SPECIFIED
+        default=coalesce(
+            param.default,
+            NOT_SPECIFIED,
+            is_not=[param.empty],
+            check_falsey=False,
         ),
-        vararg=(
-            (
-                param.kind is param.VAR_KEYWORD
-                or param.kind is param.VAR_POSITIONAL
-            )
-            or None
-        ),
+        vararg=is_any(param.kind, [param.VAR_KEYWORD, param.VAR_POSITIONAL])
+        or None,
     )
     log.debug("generated argument detail: %s", detail)
     return detail
 
 
-def _get_fn_details(fn: Callable):
+def _get_fn_details(fn: Callable[..., Any]):
     return {
         "name": (
             fn.__name__ if hasattr(fn, "__name__") else fn.__class__.__name__
@@ -242,7 +230,7 @@ def _get_fn_details(fn: Callable):
     }
 
 
-def _get_inspect_arg_details(params: list[inspect.Parameter]):
+def _get_inspect_arg_details(params: Sequence[inspect.Parameter]):
 
     return [
         _get_inspect_arg_detail(index, param)
@@ -255,7 +243,7 @@ def _get_inspect_arg_details(params: list[inspect.Parameter]):
     #         details
 
 
-def _make_detail(**kwargs):
+def _make_detail(**kwargs: Any):
     return {
         n: v
         for n, v in kwargs.items()

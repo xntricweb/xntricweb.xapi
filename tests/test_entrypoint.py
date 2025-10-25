@@ -1,5 +1,6 @@
 import inspect
 from types import SimpleNamespace
+from typing import Any, Callable
 
 import pytest
 from xntricweb.xapi.entrypoint import (
@@ -31,10 +32,6 @@ def _ns(
     annotations={},
 ):
     return SimpleNamespace(**locals())
-
-
-def _d(**kwargs):
-    return kwargs
 
 
 def no_args():
@@ -77,51 +74,51 @@ def adv_annotated(
 
 cases = [
     (no_args, []),
-    (plain_arg, [_d(index=0, name="a")]),
+    (plain_arg, [dict(index=0, name="a")]),
     (
         plain_arg_multi,
-        [_d(index=0, name="a"), _d(index=1, name="b")],
+        [dict(index=0, name="a"), dict(index=1, name="b")],
     ),
     (
         plain_arg_defaults,
         [
-            _d(index=0, name="a"),
-            _d(index=1, name="b", default=1, annotation=int),
-            _d(index=2, name="c", default=2, annotation=int),
+            dict(index=0, name="a"),
+            dict(index=1, name="b", default=1),
+            dict(index=2, name="c", default=2),
         ],
     ),
-    (plain_var_arg, [_d(index=0, name="j", vararg=True)]),
+    (plain_var_arg, [dict(index=0, name="j", vararg=True)]),
     (
         plain_arg_var_arg,
-        [_d(index=0, name="a"), _d(index=1, name="j", vararg=True)],
+        [dict(index=0, name="a"), dict(index=1, name="j", vararg=True)],
     ),
     (
         kw,
         [
-            _d(name="m", default=4, annotation=int),
-            _d(name="n", default=5.0, annotation=float),
+            dict(name="m", default=4),
+            dict(name="n", default=5.0),
         ],
     ),
     (
         adv,
         [
-            _d(index=0, name="a"),
-            _d(index=1, name="b", default=1, annotation=int),
-            _d(index=2, name="c", default=2, annotation=int),
-            _d(index=3, name="j", vararg=True),
-            _d(name="m", default=4, annotation=int),
-            _d(name="n", default=5.0, annotation=float),
+            dict(index=0, name="a"),
+            dict(index=1, name="b", default=1),
+            dict(index=2, name="c", default=2),
+            dict(index=3, name="j", vararg=True),
+            dict(name="m", default=4),
+            dict(name="n", default=5.0),
         ],
     ),
     (
         adv_annotated,
         [
-            _d(index=0, name="a", annotation=str),
-            _d(index=1, name="b", default=1, annotation=float),
-            _d(index=2, name="c", default=2, annotation=int),
-            _d(index=3, name="j", vararg=True, annotation=int),
-            _d(name="m", default=4, annotation=float),
-            _d(name="n", default=5.0, annotation=float),
+            dict(index=0, name="a", annotation=str),
+            dict(index=1, name="b", default=1, annotation=float),
+            dict(index=2, name="c", default=2, annotation=int),
+            dict(index=3, name="j", vararg=True, annotation=int),
+            dict(name="m", default=4, annotation=float),
+            dict(name="n", default=5.0, annotation=float),
         ],
     ),
 ]
@@ -132,10 +129,12 @@ cases = [
     argvalues=cases,
     ids=[fn[0].__name__ for fn in cases],
 )
-def test_fn_arg_details(case, expected):
+def test_fn_arg_details(
+    case: Callable[..., Any], expected: list[dict[str, Any]]
+):
     sig = inspect.signature(case)
 
-    assert _get_inspect_arg_details(sig.parameters.values()) == expected
+    assert _get_inspect_arg_details(list(sig.parameters.values())) == expected
 
 
 def test_fn_details():
@@ -149,7 +148,7 @@ def test_fn_details():
         def __call__(self):
             pass
 
-    assert _get_fn_details(testfn) == _d(name="testfn", description="test1")
-    assert _get_fn_details(testclass) == _d(
+    assert _get_fn_details(testfn) == dict(name="testfn", description="test1")
+    assert _get_fn_details(testclass) == dict(
         name="testclass", description="test2"
     )
