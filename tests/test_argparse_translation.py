@@ -1,7 +1,6 @@
 from typing import Literal
 
 import pytest
-from xntricweb.xapi.const import NOT_SPECIFIED
 from xntricweb.xapi.xapi import XAPIExecutor, XAPI
 from xntricweb.xapi.arguments import Argument
 from types import SimpleNamespace
@@ -32,10 +31,6 @@ def gen(arg):
     # return args, kwargs
 
 
-def _d(**kwargs):
-    return kwargs
-
-
 def _dd(default=None, **kwargs):
     kwargs["default"] = default
     return kwargs
@@ -50,7 +45,7 @@ def test_positional():
         (Argument("named"), (["named"], {})),
         (
             Argument("name_underscored"),
-            (["name_underscored"], _d()),
+            (["name_underscored"], dict()),
         ),
         # (
         #     Argument("name_default", default=1),
@@ -58,11 +53,11 @@ def test_positional():
         # ),
         (
             Argument("annotated", annotation=int),
-            (["annotated"], _d()),
+            (["annotated"], dict()),
         ),
         (
             Argument("help", help="help text"),
-            (["help"], _d(help="help text")),
+            (["help"], dict(help="help text")),
         ),
         (
             Argument("aliased", aliases=["a"]),
@@ -70,11 +65,11 @@ def test_positional():
         ),
         (
             Argument("metavar", metavar="metavar text"),
-            (["metavar"], _d(metavar="metavar text")),
+            (["metavar"], dict(metavar="metavar text")),
         ),
         (
             Argument("varargs", index=0, vararg=True),
-            (["varargs"], _d(nargs="*")),
+            (["varargs"], dict(nargs="*")),
         ),
         (
             Argument(
@@ -88,7 +83,7 @@ def test_positional():
             ),
             (
                 ["all_together", "at"],
-                _d(
+                dict(
                     help="all together help",
                     metavar="all together metavar",
                     nargs="*",
@@ -134,7 +129,7 @@ def test_positional():
             Argument("varargs", vararg=True),
             (
                 ["--varargs"],
-                _d(action="store_const", const="KWARG"),
+                dict(action="store_const", const="KWARG"),
             ),
         ),
         (
@@ -148,7 +143,7 @@ def test_positional():
             ),
             (
                 ["--all-together", "at"],
-                _d(
+                dict(
                     help="all together help",
                     metavar="all together metavar",
                     dest="all_together",
@@ -168,7 +163,7 @@ def test_special_annotations():
     cases = [
         (
             Argument("bool", annotation=bool),
-            (["--bool"], _d(default=False, action="store_true")),
+            (["--bool"], dict(default=False, action="store_true")),
         ),
         # (
         #     Argument("const", annotation=Literal[5]),
@@ -176,15 +171,15 @@ def test_special_annotations():
         # ),
         (
             Argument("choice", annotation=Literal["run", "walk"]),
-            (["choice"], _d(choices=["run", "walk"])),
+            (["choice"], dict(choices=["run", "walk"])),
         ),
         (
             Argument("list", annotation=list[int]),
-            (["list"], _d(nargs="*")),
+            (["list"], dict(nargs="*")),
         ),
         (
             Argument("tuple", annotation=tuple[int, float, str]),
-            (["tuple"], _d(nargs=3)),
+            (["tuple"], dict(nargs=3)),
         ),
     ]
 
@@ -280,42 +275,42 @@ test_cases_optional_setup_argument = [
     (
         Argument("int", default=3, annotation=int),
         ["--int", "1"],
-        ([], _d(int=1)),
+        ([], dict(int=1)),
     ),
     (
         Argument("int_notprovided", default=3, annotation=int),
         [],
-        ([], _d()),
+        ([], dict()),
     ),
     (
         Argument("float", default=3.4, annotation=float),
         ["--float", "3.6"],
-        ([], _d(float=3.6)),
+        ([], dict(float=3.6)),
     ),
     (
         Argument("float_notprovided", default=3.4, annotation=float),
         [],
-        ([], _d()),
+        ([], dict()),
     ),
     (
         Argument("string", default="54", annotation=str),
         ["--string", "2"],
-        ([], _d(string="2")),
+        ([], dict(string="2")),
     ),
     (
         Argument("list_strings", default=3, annotation=list[str]),
         ["--list-strings", *"abcdef".split()],
-        ([], _d(list_strings="abcdef".split())),
+        ([], dict(list_strings="abcdef".split())),
     ),
     (
-        Argument("list_ints", default=3, annotation=list[int]),
+        Argument("list_ints", default=[], annotation=list[int]),
         ["--list-ints", *list(map(str, range(10)))],
-        ([], _d(list_ints=list(range(10)))),
+        ([], dict(list_ints=list(range(10)))),
     ),
     (
         Argument("list_unspecified", default=3, annotation=list),
         ["--list-unspecified", *list(map(str, range(10)))],
-        ([], _d(list_unspecified=list(map(str, range(10))))),
+        ([], dict(list_unspecified=list(map(str, range(10))))),
     ),
     (
         Argument(
@@ -324,22 +319,22 @@ test_cases_optional_setup_argument = [
             annotation=list[str],
         ),
         [],
-        ([], _d()),
+        ([], dict()),
     ),
     (
         Argument("list_empty", default=["3", "4", "5"], annotation=list[str]),
         ["--list-empty"],
-        ([], _d(list_empty=[])),
+        ([], dict(list_empty=[])),
     ),
     (
         Argument("tuple", default=(3, 4), annotation=tuple[str, int]),
         ["--tuple", "1", "2"],
-        ([], _d(tuple=("1", 2))),
+        ([], dict(tuple=("1", 2))),
     ),
     (
         Argument("tuple_unspecified", default=("3", "4"), annotation=tuple),
         ["--tuple-unspecified", "1", "2"],
-        ([], _d(tuple_unspecified=("1", "2"))),
+        ([], dict(tuple_unspecified=("1", "2"))),
     ),
     (
         Argument(
@@ -348,12 +343,12 @@ test_cases_optional_setup_argument = [
             annotation=tuple,
         ),
         [],
-        ([], _d()),
+        ([], dict()),
     ),
     (
         Argument("tuple_unspecified_empty", default=(3, 4), annotation=tuple),
         [],
-        ([], _d()),
+        ([], dict()),
     ),
 ]
 

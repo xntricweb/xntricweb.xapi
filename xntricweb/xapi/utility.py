@@ -1,12 +1,16 @@
 from typing import Optional, get_args, get_origin, Any
 
-from .const import NOT_SPECIFIED, AnyType
+from .const import AnyType
 
 
 def get_origin_args(_type: AnyType) -> tuple[AnyType, tuple[AnyType, ...]]:
     args = get_args(_type)
+
     if origin := get_origin(_type):
         return origin, args
+
+    if callable(_type):
+        return _type, args
 
     if (origin := getattr(_type, "__class__", None)) and origin is not type:
         return origin, args

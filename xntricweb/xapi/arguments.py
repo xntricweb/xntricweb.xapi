@@ -18,10 +18,10 @@ class Argument[T]:
     name: str
     """The argument name."""
 
-    annotation: Optional[Callable[[str], T]] = None
+    annotation: Optional[Callable[[Any], T]] = None
     """
-    The arguments annotation type. 
-    This must be a Callable and will be used to coerce the value to the 
+    The arguments annotation type.
+    This must be a Callable and will be used to coerce the value to the
     correct type for the function.
     """
 
@@ -136,7 +136,11 @@ class _Converter[T](Protocol):
 
 
 def _default_type_converter(
-    value: Any, origin: AnyType, origin_args: tuple[AnyType, ...], **_: Any
+    value: Any,
+    origin: AnyType,
+    origin_args: tuple[AnyType, ...],
+    # annotation: AnyType,
+    **_: Any,
 ) -> Any:
     log.debug(
         "using default type converter for %r with %r[%r]",
@@ -173,9 +177,23 @@ def _iterable_type_converter(
 ) -> list[Any] | tuple[Any, ...] | None:
     params = None
     if not origin_args or len(origin_args) == 0:
+        log.debug(
+            "using default type converter for plain iterable %r(%r)",
+            origin,
+            value,
+        )
         return _default_type_converter(value, origin, origin_args)
     elif len(origin_args) == 1:
+        log.debug(
+            "converting %r to %r[%r] in single type mode",
+            value,
+            origin,
+            origin_args[0],
+        )
         if value is None:
+            log.debug(
+                "found no value passing to converter to see if this is allowed"
+            )
             _v = _convert(value, origin_args[0])
             if _v:
                 return [_v]
@@ -185,6 +203,11 @@ def _iterable_type_converter(
         params = [_convert(sub_value, origin_args[0]) for sub_value in value]
 
     elif len(origin_args) > 1:
+        log.debug(
+            "converting %r to list[%r] in multi type mode",
+            value,
+            origin_args[0],
+        )
         if len(origin_args) != len(value):
             raise ConversionError(
                 f"annotation expected {len(origin_args)} items..."
@@ -197,7 +220,8 @@ def _iterable_type_converter(
             for index, sub_value in enumerate(value)
         ]
 
-    if callable(origin) and params:
+    if callable(origin):
+        log.debug("converting with %r(%r)", origin, params)
         return origin(params)
 
     raise ConversionError(
@@ -265,27 +289,27 @@ type_converters: dict[AnyType, _Converter[Any]] = {
 }
 
 
-def _get_converter(
-    origin: AnyType, default: Any = None
-) -> _Converter[Any] | None:
-    base = None
+def _get_converter(origin: AnyType) -> _Converter[Any] | None:
+    log.debug("Getting converter for origin %r", origin)
     converter = type_converters.get(origin, None)
     if not converter:
         log.debug("searching base converters for origin: %r", origin)
         _bases = getattr(origin, "__bases__", None)
         if _bases:
+            log.debug("found base types %r", _bases)
             for base in reversed(_bases):
                 converter = type_converters.get(base)
                 if converter:
                     break
-        else:
-            _class = getattr(origin, "__class__")
-            log.debug("found %r class for origin %r", _class, origin)
-            origin = _class
+        # else:
+        #     log.debug('found base types %r', _bases)
+        #     _class = getattr(origin, "__class__")
+        #     log.debug("found %r class for origin %r", _class, origin)
+        #     origin = _class
     log.debug(
-        "found converter %r using base %r for origin %r",
+        "found converter %r for origin %r",
         converter,
-        base,
+        # base,
         origin,
     )
     return converter
@@ -303,7 +327,7 @@ def _convert(value: Any, annotation: AnyType):
         converter = _default_type_converter
 
     log.debug(
-        "converting value '%r' using %r with origin: %r, args: %r",
+        "converting value %r using %r with origin: %r, args: %r",
         value,
         getattr(converter, "__name__", "[N/A]"),
         origin,

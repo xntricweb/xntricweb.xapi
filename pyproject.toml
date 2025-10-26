@@ -7,7 +7,7 @@ name = "xntricweb-xapi"
 dynamic = ["version"]
 description = 'Tools for fast terminal application development.'
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.12"
 license = "MIT"
 keywords = []
 authors = [

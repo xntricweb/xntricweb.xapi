@@ -33,19 +33,17 @@ class Entrypoint:
     entrypoints: Optional[list[Entrypoint]] = None
 
     @property
-    def has_required_arguments(self):
+    def has_required_arguments(self) -> bool:
         if not self.arguments:
             return False
         return any([arg.default is NotSpecified for arg in self.arguments])
 
     @property
-    def has_kwargs(self):
+    def has_kwargs(self) -> bool:
         if not self.arguments:
             return False
 
-        return any(
-            [arg.vararg and arg.index is None for arg in self.arguments]
-        )
+        return any([arg.vararg and arg.index is None for arg in self.arguments])
 
     def __call__(self, *args: Any, **kwargs: Any):
         if not self.entrypoint:
@@ -77,7 +75,6 @@ class Entrypoint:
         return False
 
     def __post_init__(self):
-
         if not self.entrypoints:
             self.entrypoints = []
 
@@ -123,9 +120,9 @@ class Entrypoint:
         self.add_subentrypoint(subentrypoint)
 
     def add_subentrypoint(self, entrypoint: Entrypoint):
-        assert (
-            not self.has_required_arguments
-        ), "Entrypoint with required params cannot be used as parents"
+        assert not self.has_required_arguments, (
+            "Entrypoint with required params cannot be used as parents"
+        )
 
         if not self.entrypoints:
             self.entrypoints = []
@@ -149,14 +146,12 @@ class Entrypoint:
 
         return args, kwargs
 
-    def execute(self, params: dict[str, Any], raw_kwargs: dict[str, str]):
+    def execute(self, params: dict[str, Any], raw_kwargs: dict[str, str]) -> Any:
         if self.parent:
             self.parent.execute(params, raw_kwargs)
 
         if not self.entrypoint:
-            raise AttributeError(
-                "Nothing to do for entrypoint: %s" % self.name
-            )
+            raise AttributeError("Nothing to do for entrypoint: %s" % self.name)
 
         arg, kwargs = self.generate_call_args(params, raw_kwargs)
         return self.entrypoint(*arg, **kwargs)
@@ -169,9 +164,7 @@ class Entrypoint:
             entrypoint=fn,
             arguments=[
                 Argument(**info)
-                for info in _get_inspect_arg_details(
-                    list(spec.parameters.values())
-                )
+                for info in _get_inspect_arg_details(list(spec.parameters.values()))
             ],
             **(details | overrides),
         )
@@ -180,11 +173,15 @@ class Entrypoint:
         return f"entrypoint({self.name})"
 
     def __repr__(self):
-        return f"{self.__class__.__name__}({', '.join([
-            f'{k}={v}'
-            for k, v in vars(self).items()
-            if not (v is None or v is NOT_SPECIFIED or k[0] == ('_'))
-        ])})"
+        return f"{self.__class__.__name__}({
+            ', '.join(
+                [
+                    f'{k}={v}'
+                    for k, v in vars(self).items()
+                    if not (v is None or v is NOT_SPECIFIED or k[0] == ('_'))
+                ]
+            )
+        })"
 
 
 def _get_inspect_arg_detail(index: int | None, param: inspect.Parameter):
@@ -214,8 +211,7 @@ def _get_inspect_arg_detail(index: int | None, param: inspect.Parameter):
             is_not=[param.empty],
             check_falsey=False,
         ),
-        vararg=is_any(param.kind, [param.VAR_KEYWORD, param.VAR_POSITIONAL])
-        or None,
+        vararg=is_any(param.kind, [param.VAR_KEYWORD, param.VAR_POSITIONAL]) or None,
     )
     log.debug("generated argument detail: %s", detail)
     return detail
@@ -223,19 +219,13 @@ def _get_inspect_arg_detail(index: int | None, param: inspect.Parameter):
 
 def _get_fn_details(fn: Callable[..., Any]):
     return {
-        "name": (
-            fn.__name__ if hasattr(fn, "__name__") else fn.__class__.__name__
-        ),
+        "name": (fn.__name__ if hasattr(fn, "__name__") else fn.__class__.__name__),
         "description": fn.__doc__,
     }
 
 
 def _get_inspect_arg_details(params: Sequence[inspect.Parameter]):
-
-    return [
-        _get_inspect_arg_detail(index, param)
-        for index, param in enumerate(params)
-    ]
+    return [_get_inspect_arg_detail(index, param) for index, param in enumerate(params)]
 
     # for param in params:
     #     if param.kind is param.POSITIONAL_ONLY:

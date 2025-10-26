@@ -12,68 +12,72 @@ from typing import (
     Tuple,
     Type,
     Union,
+    cast,
+    overload,
 )
 
 from .arguments import Argument, ConversionError
 from .entrypoint import Entrypoint
 
-from .const import log, NOT_SPECIFIED
+from .const import AnyType, log, NOT_SPECIFIED
 from .utility import get_origin_args
 from .xapi_docstring_parser import DocInfo
 
 
 @dataclass
-class _ParserTranslationContext:
-    argument: Argument
+class _ParserTranslationContext[str]:
+    argument: Argument[str]
     parser_args: List[Any]
     parser_kwargs: Dict[str, Any]
 
-    origin: Optional[Type | UnionType] = None
-    origin_params: Optional[Tuple[Type | UnionType]] = None
+    origin: Optional[AnyType] = None
+    origin_params: Optional[Tuple[AnyType, ...]] = None
 
+
+type _Translator = Callable[[_ParserTranslationContext[Any]], None]
 
 # entrypoint_parsers: dict[Entrypoint, argparse.ArgumentParser] = {}
 
-_Translator = Callable[[_ParserTranslationContext], bool]
 
-
-def default_translator(_):
+def default_translator(_: _ParserTranslationContext[str]):
     pass
 
 
-def literal_translator(ctx: _ParserTranslationContext):
+def literal_translator(ctx: _ParserTranslationContext[Any]):
+    if not ctx.origin_params or (param_count := len(ctx.origin_params)) == 0:
+        raise AttributeError(f"Cannot translate empty literal for {ctx.argument}")
 
-    if len(ctx.origin_params) > 1:
+    if param_count > 1:
         ctx.parser_kwargs["choices"] = list(ctx.origin_params)
-    elif len(ctx.origin_params) == 1:
+    elif param_count == 1:
         raise AttributeError("single Literal option not supported")
-    else:
-        raise TypeError("Cannot translate empty literal expression.")
 
 
-def bool_translator(ctx: _ParserTranslationContext):
+def bool_translator(ctx: _ParserTranslationContext[Any]):
     state = ctx.argument.default is True
     ctx.parser_kwargs["default"] = state
     ctx.parser_kwargs["action"] = f"store_{str(not state).lower()}"
 
 
-def list_translator(ctx: _ParserTranslationContext):
+def list_translator(ctx: _ParserTranslationContext[Any]):
     ctx.parser_kwargs["nargs"] = "*"
 
 
-def tuple_translator(ctx: _ParserTranslationContext):
+def tuple_translator(ctx: _ParserTranslationContext[Any]):
     if ctx.origin_params:
         ctx.parser_kwargs["nargs"] = len(ctx.origin_params)
     else:
         ctx.parser_kwargs["nargs"] = "*"
 
 
-def enum_translator(ctx: _ParserTranslationContext):
+def enum_translator(ctx: _ParserTranslationContext[Any]):
     enum_choices = [k for k in vars(ctx.origin) if not k[0] == "_"]
     ctx.parser_kwargs["choices"] = enum_choices
 
 
-def union_translator(ctx: _ParserTranslationContext):
+def union_translator(ctx: _ParserTranslationContext[Any]):
+    if not ctx.origin_params:
+        raise TypeError("Cannot generate union arguments for empty set")
     for type in ctx.origin_params:
         origin, origin_params = get_origin_args(type)
         sub_ctx = _ParserTranslationContext(
@@ -92,7 +96,7 @@ def union_translator(ctx: _ParserTranslationContext):
         ctx.parser_kwargs.update(sub_ctx.parser_kwargs)
 
 
-_translators = {
+_translators: dict[AnyType, Callable[[_ParserTranslationContext[Any]], None]] = {
     Union: union_translator,
     UnionType: union_translator,
     Literal: literal_translator,
@@ -103,52 +107,66 @@ _translators = {
 }
 
 
+@overload
+def _get_translator(origin: AnyType) -> _Translator | None:
+    pass
+
+
+@overload
+def _get_translator(origin: AnyType, default: _Translator) -> _Translator:
+    pass
+
+
+@overload
+def _get_translator(origin: AnyType, default: None) -> _Translator | None:
+    pass
+
+
 def _get_translator(
-    origin, default: Optional[_Translator] = None
+    origin: AnyType, default: Optional[_Translator] = None
 ) -> _Translator | None:
-    translator = _translators.get(origin, None)
-    if not translator:
-        log.debug("searching base translators for origin: %r", origin)
-        if not hasattr(origin, "__bases__"):
-            log.debug("found %r class for origin %r", origin.__class__, origin)
-            origin = origin.__class__
+    if translator := _translators.get(origin, None):
+        return translator
 
-        for base in reversed(origin.__bases__):
-            translator = _translators.get(base, None)
-            if translator:
-                log.debug(
-                    "found translator for base %r for origin %r", base, origin
-                )
-                break
+    log.debug("searching base translators for origin: %r", origin)
+    if (_bases := getattr(origin, "__bases__", None)) is None:
+        if not (origin := getattr(origin, "__class__", None)):
+            raise TypeError(f"No translator available for origin {origin}")
 
-    return translator or default
+        return _get_translator(origin, default)
+
+    for base in reversed(_bases):
+        if translator := _translators.get(base, None):
+            log.debug("found translator for base %r for origin %r", base, origin)
+            return translator
+
+    return default
 
 
-def _translate(ctx: _ParserTranslationContext):
+def _translate(ctx: _ParserTranslationContext[Any]):
     if not ctx.origin:
         if ctx.argument.vararg:
             if ctx.argument.index is not None:
-                origin = list
-                origin_args = (ctx.argument.annotation,)
+                ctx.origin = list
+                ctx.origin_params = (ctx.argument.annotation,)
             else:
                 ctx.parser_kwargs["action"] = "store_const"
                 ctx.parser_kwargs["const"] = "KWARG"
                 # ctx.parser_kwargs["nargs"] = 0
                 return
         else:
-            origin, origin_args = _get_origin_args(ctx.argument.annotation)
-        ctx.origin = origin
-        ctx.origin_params = origin_args
+            ctx.origin, ctx.origin_params = get_origin_args(ctx.argument.annotation)
 
-    translator = _get_translator(ctx.origin, default_translator)
+    translator: _Translator = _get_translator(ctx.origin, default_translator)
 
     log.debug(
         "translating %r argument using translator %r with origin: %r[%r]",
         ctx.argument.name,
-        translator.__name__,
+        getattr(translator, "__name__", "[Unknown]"),
         ctx.origin,
         ctx.origin_params,
     )
+
     translator(ctx)
     log.debug(
         "translated %r argument to parser args: %r, %r",
@@ -159,7 +177,6 @@ def _translate(ctx: _ParserTranslationContext):
 
 
 class XAPI:
-
     def __init__(self):
         self.effects: list[Entrypoint] = []
         self.entrypoints: list[Entrypoint] = []
@@ -167,9 +184,7 @@ class XAPI:
     def dashed_name(self, name: str):
         return name.replace("_", "-")
 
-    def _get_entrypoint(
-        self, name_or_alias: str, entrypoints: list[Entrypoint]
-    ):
+    def _get_entrypoint(self, name_or_alias: str, entrypoints: list[Entrypoint]):
         for entrypoint in entrypoints:
             if entrypoint.name == name_or_alias:
                 return entrypoint
@@ -189,31 +204,31 @@ class XAPI:
     def entrypoint(
         self,
         entrypoint: (
-            Type[Entrypoint] | Entrypoint | Callable | str | None
+            Type[Entrypoint] | Entrypoint | Callable[..., Any] | str | None
         ) = None,
         /,
         *,
-        deprecated=False,
-        **kwargs,
-    ):
+        deprecated: bool = False,
+        **kwargs: Any,
+    ) -> Entrypoint | Callable[..., Entrypoint]:
         log.debug("setting up new entrypoint %r", entrypoint)
 
-        def wrap(fn: Callable | Entrypoint = None):
+        def wrap(
+            fn: (Callable[..., Any] | Entrypoint | Type[Entrypoint] | None) = None,
+        ):
             if isinstance(fn, Entrypoint):
                 log.debug("using previously created entrypoint %r", fn)
                 _entrypoint = fn
 
-            elif type(fn) is type and issubclass(fn, Entrypoint):
-                log.debug("setting up entrypoint subclass %r", fn)
-                _entrypoint = fn(**kwargs)
-
             elif isinstance(fn, Callable):
                 log.debug("building entrypiont from callable: %r", fn)
                 _entrypoint = Entrypoint.from_function(fn, **kwargs)
+
+            # elif issubclass(fn, Entrypoint):
+            #     log.debug("setting up entrypoint subclass %r", fn)
+            #     _entrypoint = fn(**kwargs)
+
             else:
-                log.debug(
-                    "not sure what's happening with %r, just using kwargs", fn
-                )
                 _entrypoint = Entrypoint(**kwargs)
 
             if not _entrypoint.parent:
@@ -234,12 +249,12 @@ class XAPI:
 
     def effect(
         self,
-        entrypoint: Entrypoint | Callable | str | None = None,
+        entrypoint: Entrypoint | Callable[..., Any] | str | None = None,
         *,
-        deprecated=False,
-        **kwargs,
+        deprecated: bool = False,
+        **kwargs: Any,
     ):
-        def wrap(fn: Callable):
+        def wrap(fn: Callable[..., Any]):
             _entrypoint = Entrypoint.from_function(fn, **kwargs)
             # _entrypoint = Entrypoint(entrypoint=fn, **kwargs)
 
@@ -268,7 +283,7 @@ class XAPI:
         namespace: argparse.Namespace | None = None,
         effect_parser: argparse.ArgumentParser | None = None,
         root_parser: argparse.ArgumentParser | None = None,
-        **parser_args,
+        **parser_args: Any,
     ):
         if not effect_parser:
             effect_parser = argparse.ArgumentParser(add_help=False)
@@ -306,14 +321,10 @@ class XAPIExecutor:
             parents=[self.effect_parser],
         )
 
-    def get_argument_args(self, argument: Argument):
+    def get_argument_args(self, argument: Argument[Any]):
         log.debug("retrieving argument args for argument: %r", argument)
-        if argument.name is None:
-            raise AttributeError(
-                "Name is required for argument: %r" % argument
-            )
 
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
 
         if argument.help:
             kwargs["help"] = argument.help
@@ -348,7 +359,7 @@ class XAPIExecutor:
     def setup_argument(
         self,
         index: int,
-        argument: Argument,
+        argument: Argument[Any],
         parser: argparse.ArgumentParser,
         doc_info: DocInfo,
     ):
@@ -369,10 +380,12 @@ class XAPIExecutor:
 
     def setup_arguments(
         self,
-        arguments: list[Argument],
+        arguments: list[Argument[Any]] | None,
         parser: argparse.ArgumentParser,
-        doc_info,
+        doc_info: DocInfo,
     ):
+        if not arguments:
+            return cast(list[argparse.Action], [])
         log.debug("setting up %r arguments", len(arguments))
         args = [
             self.setup_argument(index, argument, parser, doc_info)
@@ -402,7 +415,7 @@ class XAPIExecutor:
         self,
         entrypoints: Optional[list[Entrypoint]] = None,
         parser: Optional[argparse.ArgumentParser] = None,
-        parents: Optional[argparse.ArgumentParser] = None,
+        parents: Optional[list[argparse.ArgumentParser]] = None,
     ):
         entrypoints = entrypoints or self.xapi.entrypoints
         if not parser:
@@ -421,7 +434,7 @@ class XAPIExecutor:
     def setup_entrypoint(
         self,
         entrypoint: Entrypoint,
-        parsers: argparse._SubParsersAction,
+        parsers: Any,
         parents: list[argparse.ArgumentParser],
     ):
         log.debug("setting up entrypoint: %r", entrypoint)
@@ -429,7 +442,7 @@ class XAPIExecutor:
         if not entrypoint.name:
             raise AttributeError("Bad entrypoint name: %r" % entrypoint)
 
-        kwargs = {
+        kwargs: dict[str, Any] = {
             "help": entrypoint.help,
             "description": entrypoint.description,
             "epilog": entrypoint.epilog,
@@ -456,9 +469,7 @@ class XAPIExecutor:
             kwargs,
         )
 
-        parser: argparse.ArgumentParser = parsers.add_parser(
-            entrypoint.name, **kwargs
-        )
+        parser: argparse.ArgumentParser = parsers.add_parser(entrypoint.name, **kwargs)
         parser.set_defaults(__entrypoint__=entrypoint)
 
         self.parsers[entrypoint] = parser
@@ -475,14 +486,16 @@ class XAPIExecutor:
             )
         log.debug("finished setting up entrypoint: %r", entrypoint)
 
-    def _collect_kwargs(self, raw_kwargs: list[str], default: Any = ""):
-        result: dict[str, Any | List[Any]] = {}
-        positional = []
+    def _collect_kwargs(
+        self, raw_kwargs: list[str], default: Any = ""
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any | List[Any]] = {}
+        positional: list[Any] = []
         key = None
         for arg in raw_kwargs:
             if arg.startswith("--"):
-                if key and result.get(key, None) is None:
-                    result[key] = default
+                if key and kwargs.get(key, None) is None:
+                    kwargs[key] = default
 
                 key = arg.lstrip("-")
                 # result[key] = default
@@ -492,19 +505,17 @@ class XAPIExecutor:
                 positional.append(arg)
                 continue
 
-            cv = result.get(key, None)
-            if hasattr(cv, "append"):
-                cv.append(arg)
-            elif cv is not None:
-                result[key] = [cv, arg]
+            cv: Any | None = kwargs.get(key, None)
+            if not cv:
+                kwargs[key] = arg
+            elif appender := getattr(cv, "append"):
+                appender(arg)
             else:
-                result[key] = arg
+                kwargs[key] = [cv, arg]
 
         if positional:
-            raise UserWarning(
-                "Found unexpected positional args %r", positional
-            )
-        return result
+            raise UserWarning("Found unexpected positional args %r", positional)
+        return kwargs
 
     def run(
         self,
@@ -513,20 +524,20 @@ class XAPIExecutor:
     ):
         log.debug("Running xapi executor on args: %r", argv)
         if self.accept_kwargs:
-            namespace, raw_kwargs = self.root_parser.parse_known_args(
-                argv, namespace
-            )
+            namespace, raw_kwargs = self.root_parser.parse_known_args(argv, namespace)
         else:
             namespace = self.root_parser.parse_args(argv, namespace)
-            raw_kwargs = {}
+            raw_kwargs: list[str] = []
 
-        log.debug(
-            "processing namespace: %r, unused: %r", namespace, raw_kwargs
-        )
+        log.debug("processing namespace: %r, unused: %r", namespace, raw_kwargs)
 
         kwargs = self._collect_kwargs(raw_kwargs)
         log.debug("collected extra kwargs: %r", kwargs)
-        entrypoint = self._get_namespace_entrypoint(namespace)
+        if not namespace:
+            raise ValueError("Namespace is None")
+
+        if not (entrypoint := self._get_namespace_entrypoint(namespace)):
+            raise ValueError("Failed to determine entrypooint for namespace")
 
         if kwargs and not self.effect_kwargs and not entrypoint.has_kwargs:
             message = f"unrecognized arguments: {kwargs}"
@@ -549,34 +560,26 @@ class XAPIExecutor:
 
     def _get_namespace_entrypoint(
         self, namespace: argparse.Namespace
-    ) -> Entrypoint:
-        return (
-            namespace.__entrypoint__
-            if hasattr(namespace, "__entrypoint__")
-            else None
-        )
+    ) -> Entrypoint | None:
+        return getattr(namespace, "__entrypoint__", None)
 
     def _call_entrypoint(
         self,
         entrypoint: Entrypoint,
         namespace: argparse.Namespace,
         kwargs: Dict[str, str],
-    ):
+    ) -> Any:
         log.debug("executing entrypoint: %r", entrypoint)
 
         try:
-            return entrypoint.execute(vars(namespace), kwargs, self)
+            return entrypoint.execute(vars(namespace), kwargs)
         except AttributeError as e:
-            self._print_and_exit(
-                self.parsers.get(entrypoint, None), 20, str(e)
-            )
+            self._print_and_exit(self.parsers.get(entrypoint, None), 20, str(e))
         except ConversionError as e:
-            self._print_and_exit(
-                self.parsers.get(entrypoint, None), 10, str(e)
-            )
+            self._print_and_exit(self.parsers.get(entrypoint, None), 10, str(e))
 
     def _print_and_exit(
-        self, parser: argparse.ArgumentParser, code: int, message: str
+        self, parser: argparse.ArgumentParser | None, code: int, message: str
     ):
         if not parser:
             parser = self.root_parser
