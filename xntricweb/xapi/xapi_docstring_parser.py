@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 from .const import log
 
 try:
@@ -12,15 +12,17 @@ except ImportError:
 
 
 class DocInfo:
-
-    def __init__(self, fn: Optional[Callable]):
+    def __init__(self, fn: Optional[Callable[..., Any]]):
         self.doc_info = self.get_doc_info(fn)
 
-    def get_doc_info(self, fn: Optional[Callable]):
+    def get_doc_info(self, fn: Optional[Callable[..., Any]]):
         if not fn:
             return None
 
         if not parser:
+            return None
+
+        if not fn.__doc__:
             return None
 
         if not hasattr(fn, "__doc__"):
@@ -32,7 +34,7 @@ class DocInfo:
 
         return info
 
-    def get_argument_doc_info(self, index: int):
+    def get_argument_doc_info(self, index: int) -> dict[str, str | None]:
         if not (self.doc_info):
             return {}
 
@@ -41,12 +43,10 @@ class DocInfo:
 
         doc_info = self.doc_info.params[index]
         info = {"help": doc_info.description}
-        log.debug(
-            "processed argument doc info %r with %r", info, vars(doc_info)
-        )
+        log.debug("processed argument doc info %r with %r", info, vars(doc_info))
         return info
 
-    def get_entrypoint_doc_info(self):
+    def get_entrypoint_doc_info(self) -> dict[str, str]:
         if not self.doc_info:
             return {}
         doc_info = self.doc_info
