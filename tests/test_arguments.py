@@ -1,14 +1,23 @@
+from typing import Any
 import pytest
-from xntricweb.xapi.arguments import Argument, _convert, ConversionError
+from xntricweb.xapi.arguments import (
+    _convert,  # type: ignore
+    Argument,
+)
 
 
-def upper(str):
-    return str.upper()
+def upper(text: str) -> str:
+    return text.upper()
 
 
-def _generate_arg(arg, value):
-    args = []
-    kwargs = {}
+type TestParams = tuple[Argument, Any]
+type ExpectedParams = tuple[list[Any], dict[str, Any]]
+type TestCase = tuple[TestParams, ExpectedParams]
+
+
+def _generate_arg(arg: Argument, value: Any) -> ExpectedParams:
+    args: list[Any] = []
+    kwargs: dict[str, Any] = {}
     arg.generate_call_arg(value, args, kwargs)
     return args, kwargs
 
@@ -18,14 +27,15 @@ def test_converters():
     assert _convert("1", list[int]) == [1]
     assert _convert([1], str) == "[1]"
     assert _convert("2", tuple[str]) == ("2",)
-    with pytest.raises(ConversionError):
+
+    with pytest.raises(ValueError):
         assert _convert("a", int)
 
-    with pytest.raises(ConversionError):
+    with pytest.raises(TypeError):
         assert _convert([1], int)
 
 
-test_cases = [
+test_cases: list[TestCase] = [
     ((Argument("name_only", index=0), "blah"), (["blah"], {})),
     (
         (Argument("fn_annotation", index=0, annotation=upper), "blah"),
@@ -46,9 +56,7 @@ test_cases = [
     ),
     (
         (
-            Argument(
-                "annotated_tuple", index=0, annotation=tuple[str, int, float]
-            ),
+            Argument("annotated_tuple", index=0, annotation=tuple[str, int, float]),
             ["1.3", "4", "5.2"],
         ),
         ([("1.3", 4, 5.2)], {}),
@@ -103,7 +111,7 @@ test_cases = [
 @pytest.mark.parametrize(
     "case, expected", test_cases, ids=[tc[0][0].name for tc in test_cases]
 )
-def test_cases(case, expected):
+def test_arguments(case: TestParams, expected: ExpectedParams):
     # case, expected = test_case
     # for case, expected in basic_test_cases:
     actual = _generate_arg(*case)

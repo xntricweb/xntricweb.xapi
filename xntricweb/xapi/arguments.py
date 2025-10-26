@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 import json
 from types import UnionType
-from typing import Any, Callable, Literal, Optional, Protocol, Union
+from typing import Any, Literal, Optional, Protocol, Union
 
 from xntricweb.xapi.utility import get_origin_args
 
@@ -12,13 +12,13 @@ from .const import NOT_SPECIFIED, AnyType, NotSpecified, log
 
 
 @dataclass
-class Argument[T]:
+class Argument:
     """Describes a method argument."""
 
     name: str
     """The argument name."""
 
-    annotation: Optional[Callable[[Any], T]] = None
+    annotation: Optional[AnyType] = None
     """
     The arguments annotation type.
     This must be a Callable and will be used to coerce the value to the
@@ -31,7 +31,7 @@ class Argument[T]:
     only it should be set to None.
     """
 
-    default: T | NotSpecified = NOT_SPECIFIED
+    default: Any | NotSpecified = NOT_SPECIFIED
     """
     The default value of the argument. If NOT_SPECIFIED then the
     argument is considered required.
@@ -118,6 +118,11 @@ class _Converter[T](Protocol):
         raise NotImplementedError()
 
 
+def _passthrough_converter(value: Any, **_: Any) -> Any:
+    log.debug("Skipping conversion for %r", value)
+    return value
+
+
 def _default_type_converter(
     value: Any,
     origin: AnyType,
@@ -138,7 +143,7 @@ def _default_type_converter(
     raise ConversionError(f"Unsupported origin {origin}, origin must be callable")
 
 
-def _function_type_converter(value: Any, annotation: AnyType, **_: Any) -> Any:
+def _function_converter(value: Any, annotation: AnyType, **_: Any) -> Any:
     log.debug(
         "Using function type converter for %r with annotations: %r",
         value,
@@ -153,23 +158,23 @@ def _function_type_converter(value: Any, annotation: AnyType, **_: Any) -> Any:
     )
 
 
-def _iterable_type_converter(
+def _iterable_converter(
     value: Any, origin: AnyType, origin_args: tuple[AnyType, ...], **_: Any
 ) -> list[Any] | tuple[Any, ...] | None:
     params = None
-    if not origin_args or len(origin_args) == 0:
+    if not origin_args or (arg_count := len(origin_args)) == 0:
         log.debug(
             "using default type converter for plain iterable %r(%r)",
             origin,
             value,
         )
         return _default_type_converter(value, origin, origin_args)
-    elif len(origin_args) == 1:
+    elif arg_count == 1 or (arg_count == 2 and origin_args[1] is ...):
         log.debug(
-            "converting %r to %r[%r] in single type mode",
+            "converting %r to %r%r in single type mode",
             value,
             origin,
-            origin_args[0],
+            origin_args,
         )
         if value is None:
             log.debug("found no value passing to converter to see if this is allowed")
@@ -181,11 +186,12 @@ def _iterable_type_converter(
             # return [_convert(value, origin_args)]
         params = [_convert(sub_value, origin_args[0]) for sub_value in value]
 
-    elif len(origin_args) > 1:
+    elif arg_count > 1:
         log.debug(
-            "converting %r to list[%r] in multi type mode",
+            "converting %r to %r%r in multi type mode",
             value,
-            origin_args[0],
+            origin,
+            origin_args,
         )
         if len(origin_args) != len(value):
             raise ConversionError(
@@ -198,6 +204,8 @@ def _iterable_type_converter(
             for index, sub_value in enumerate(value)
         ]
 
+    log.debug("finished conversion with params: %r", params)
+
     if callable(origin):
         log.debug("converting with %r(%r)", origin, params)
         return origin(params)
@@ -207,19 +215,19 @@ def _iterable_type_converter(
     )
 
 
-def _literal_type_converter(value: Any, origin_args: tuple[AnyType, ...], **_: Any):
+def _literal_converter(value: Any, origin_args: tuple[AnyType, ...], **_: Any):
     if value in origin_args:
         return value
     raise TypeError(f"Expected {origin_args} found '{type(value)}'")
 
 
-def _datetime_type_converter(value: str | None, **_) -> datetime | None:
+def _datetime_converter(value: str | None, **_) -> datetime | None:
     if not value:
         return None
     return datetime.fromisoformat(value)
 
 
-def _union_type_converter(value: Any, origin_args: tuple[AnyType, ...], **_: Any):
+def _union_converter(value: Any, origin_args: tuple[AnyType, ...], **_: Any):
     if value is None and None.__class__ in origin_args:
         return None
 
@@ -227,13 +235,14 @@ def _union_type_converter(value: Any, origin_args: tuple[AnyType, ...], **_: Any
         try:
             return _convert(value, _type)
             # return _type(value)
-        except Exception:
+        except Exception as e:
+            log.debug("conversion with %r failed %r", _type, e)
             pass
 
     raise ConversionError("Unable to convert value %s" % value)
 
 
-def _dict_type_converter(
+def _dict_converter(
     value: Any,
     origin: AnyType,
     origin_args: tuple[AnyType, ...],
@@ -252,14 +261,15 @@ def _dict_type_converter(
 
 
 type_converters: dict[AnyType, _Converter[Any]] = {
-    Union: _union_type_converter,
-    UnionType: _union_type_converter,
-    Literal: _literal_type_converter,
-    dict: _dict_type_converter,
-    list: _iterable_type_converter,
-    tuple: _iterable_type_converter,
-    datetime: _datetime_type_converter,
-    _function_type_converter.__class__.__base__: _function_type_converter,
+    Union: _union_converter,
+    UnionType: _union_converter,
+    Literal: _literal_converter,
+    dict: _dict_converter,
+    list: _iterable_converter,
+    tuple: _iterable_converter,
+    datetime: _datetime_converter,
+    Any: _passthrough_converter,
+    _function_converter.__class__.__base__: _function_converter,
 }
 
 
@@ -307,15 +317,9 @@ def _convert(value: Any, annotation: AnyType):
         origin,
         origin_args,
     )
-
-    try:
-        return converter(
-            value=value,
-            origin=origin,
-            origin_args=origin_args,
-            annotation=annotation,
-        )
-    except Exception as e:
-        raise ConversionError(
-            "Failed converting %r with %r, annotation: %r" % (value, origin, annotation)
-        ) from e
+    return converter(
+        value=value,
+        origin=origin,
+        origin_args=origin_args,
+        annotation=annotation,
+    )

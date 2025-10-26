@@ -25,8 +25,8 @@ from .xapi_docstring_parser import DocInfo
 
 
 @dataclass
-class _ParserTranslationContext[str]:
-    argument: Argument[str]
+class _ParserTranslationContext:
+    argument: Argument
     parser_args: List[Any]
     parser_kwargs: Dict[str, Any]
 
@@ -34,46 +34,49 @@ class _ParserTranslationContext[str]:
     origin_params: Optional[Tuple[AnyType, ...]] = None
 
 
-type _Translator = Callable[[_ParserTranslationContext[Any]], None]
+type _Translator = Callable[[_ParserTranslationContext], None]
 
 
-def default_translator(_: _ParserTranslationContext[str]):
+def default_translator(_: _ParserTranslationContext):
     pass
 
 
-def literal_translator(ctx: _ParserTranslationContext[Any]):
-    if not ctx.origin_params or (param_count := len(ctx.origin_params)) == 0:
+def literal_translator(ctx: _ParserTranslationContext):
+    if not ctx.origin_params or len(ctx.origin_params) == 0:
         raise AttributeError(f"Cannot translate empty literal for {ctx.argument}")
 
-    if param_count > 1:
-        ctx.parser_kwargs["choices"] = list(ctx.origin_params)
-    elif param_count == 1:
-        raise AttributeError("single Literal option not supported")
+    ctx.parser_kwargs["choices"] = list(ctx.origin_params)
+    # if param_count > 1:
+    #     ctx.parser_kwargs["choices"] = list(ctx.origin_params)
+    # elif param_count == 1:
+    #     return default_translator(ctx)
+    # ctx.parser_kwargs["const"] = ctx.origin_params[0]
+    # raise AttributeError("single Literal option not supported")
 
 
-def bool_translator(ctx: _ParserTranslationContext[Any]):
+def bool_translator(ctx: _ParserTranslationContext):
     state = ctx.argument.default is True
     ctx.parser_kwargs["default"] = state
     ctx.parser_kwargs["action"] = f"store_{str(not state).lower()}"
 
 
-def list_translator(ctx: _ParserTranslationContext[Any]):
+def list_translator(ctx: _ParserTranslationContext):
     ctx.parser_kwargs["nargs"] = "*"
 
 
-def tuple_translator(ctx: _ParserTranslationContext[Any]):
-    if ctx.origin_params:
+def tuple_translator(ctx: _ParserTranslationContext):
+    if ctx.origin_params and ctx.origin_params[-1] is not ...:
         ctx.parser_kwargs["nargs"] = len(ctx.origin_params)
     else:
         ctx.parser_kwargs["nargs"] = "*"
 
 
-def enum_translator(ctx: _ParserTranslationContext[Any]):
+def enum_translator(ctx: _ParserTranslationContext):
     enum_choices = [k for k in vars(ctx.origin) if not k[0] == "_"]
     ctx.parser_kwargs["choices"] = enum_choices
 
 
-def union_translator(ctx: _ParserTranslationContext[Any]):
+def union_translator(ctx: _ParserTranslationContext):
     if not ctx.origin_params:
         raise TypeError("Cannot generate union arguments for empty set")
     for type in ctx.origin_params:
@@ -94,7 +97,7 @@ def union_translator(ctx: _ParserTranslationContext[Any]):
         ctx.parser_kwargs.update(sub_ctx.parser_kwargs)
 
 
-_translators: dict[AnyType, Callable[[_ParserTranslationContext[Any]], None]] = {
+_translators: dict[AnyType, Callable[[_ParserTranslationContext], None]] = {
     Union: union_translator,
     UnionType: union_translator,
     Literal: literal_translator,
@@ -141,7 +144,7 @@ def _get_translator(
     return default
 
 
-def _translate(ctx: _ParserTranslationContext[Any]):
+def _translate(ctx: _ParserTranslationContext):
     if not ctx.origin:
         if ctx.argument.vararg:
             if ctx.argument.index is not None:
@@ -287,6 +290,9 @@ class XAPI:
                 parents=[effect_parser], **parser_args
             )
 
+        if argv is None:
+            argv = []
+
         executor = XAPIExecutor(
             self, root_parser=root_parser, effect_parser=effect_parser
         )
@@ -315,7 +321,7 @@ class XAPIExecutor:
             parents=[self.effect_parser],
         )
 
-    def get_argument_args(self, argument: Argument[Any]):
+    def get_argument_args(self, argument: Argument):
         log.debug("retrieving argument args for argument: %r", argument)
 
         kwargs: dict[str, Any] = {}
@@ -353,7 +359,7 @@ class XAPIExecutor:
     def setup_argument(
         self,
         index: int,
-        argument: Argument[Any],
+        argument: Argument,
         parser: argparse.ArgumentParser,
         doc_info: DocInfo,
     ):
@@ -374,7 +380,7 @@ class XAPIExecutor:
 
     def setup_arguments(
         self,
-        arguments: list[Argument[Any]] | None,
+        arguments: list[Argument] | None,
         parser: argparse.ArgumentParser,
         doc_info: DocInfo,
     ):

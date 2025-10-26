@@ -1,14 +1,16 @@
 from enum import Enum
-from typing import Literal
-
+from typing import Any, Callable, Literal
 import pytest
 
 from xntricweb.xapi.xapi import XAPI
 
 
-def assert_called_once(fn):
-    assert not hasattr(fn, "calls")
-    fn.calls = 1
+def track_calls(fn: Callable[..., Any]):
+    setattr(fn, "_calls", getattr(fn, "_calls", 0) + 1)
+
+
+def calls(fn: Callable[..., Any]):
+    return getattr(fn, "_calls", 0)
 
 
 def test_no_args():
@@ -16,21 +18,23 @@ def test_no_args():
 
     @xapi.entrypoint
     def no_args():
-        assert_called_once(no_args)
+        track_calls(no_args)
         return 32423
 
     assert xapi.run(["no_args"]) == 32423
+    assert calls(no_args) == 1
 
 
 def test_basic_arg():
     xapi = XAPI()
 
     @xapi.entrypoint
-    def int_arg(value):
-        assert_called_once(int_arg)
-        return value
+    def int_arg(value):  # type: ignore
+        track_calls(int_arg)
+        return value  # type: ignore
 
     assert xapi.run(["int_arg", "abc"], exit_on_error=False) == "abc"
+    assert calls(int_arg) == 1
 
 
 def test_annotated_arg():
@@ -38,10 +42,11 @@ def test_annotated_arg():
 
     @xapi.entrypoint
     def annotated_arg(value: int):
-        assert_called_once(annotated_arg)
+        track_calls(annotated_arg)
         return value
 
     assert xapi.run(["annotated_arg", "549"], exit_on_error=False) == 549
+    assert calls(annotated_arg) == 1
 
 
 def test_var_arg():
@@ -49,24 +54,23 @@ def test_var_arg():
 
     @xapi.entrypoint
     def var_arg(*value: int):
-        assert_called_once(var_arg)
+        track_calls(var_arg)
         return sum(value)
 
     assert xapi.run(["var_arg", "12", "14", "52"], exit_on_error=False) == 78
+    assert calls(var_arg) == 1
 
 
 def test_list():
     xapi = XAPI()
 
     @xapi.entrypoint
-    def list_entry(value: list):
-        assert_called_once(list_entry)
-        return value[0] + value[1] + value[2]
+    def list_entry(value: list[Any]):  # type: ignore
+        track_calls(list_entry)
+        return value[0] + value[1] + value[2]  # type: ignore
 
-    assert (
-        xapi.run(["list_entry", "13", "14", "52"], exit_on_error=False)
-        == "131452"
-    )
+    assert xapi.run(["list_entry", "13", "14", "52"], exit_on_error=False) == "131452"
+    assert calls(list_entry) == 1
 
 
 def test_list_int():
@@ -74,13 +78,11 @@ def test_list_int():
 
     @xapi.entrypoint
     def list_int_entry(value: list[int]):
-        assert_called_once(list_int_entry)
+        track_calls(list_int_entry)
         return value[0] + value[1] + value[2]
 
-    assert (
-        xapi.run(["list_int_entry", "13", "14", "52"], exit_on_error=False)
-        == 79
-    )
+    assert xapi.run(["list_int_entry", "13", "14", "52"], exit_on_error=False) == 79
+    assert calls(list_int_entry) == 1
 
 
 def test_list_empty():
@@ -88,24 +90,26 @@ def test_list_empty():
 
     @xapi.entrypoint
     def list_empty_entry(value: list[int]):
-        assert_called_once(list_empty_entry)
+        track_calls(list_empty_entry)
         return sum(value)
 
     assert xapi.run(["list_empty_entry"], exit_on_error=False) == 0
+    assert calls(list_empty_entry) == 1
 
 
 def test_tuple():
     xapi = XAPI()
 
     @xapi.entrypoint
-    def tuple_entry(value: tuple):
-        assert_called_once(tuple_entry)
+    def tuple_entry(value: tuple):  # type: ignore
+        track_calls(tuple_entry)
         return f"{value}"
 
     assert (
         xapi.run(["tuple_entry", "13", "14", "52"], exit_on_error=False)
         == "('13', '14', '52')"
     )
+    assert calls(tuple_entry) == 1
 
 
 def test_tuple_typed():
@@ -113,13 +117,14 @@ def test_tuple_typed():
 
     @xapi.entrypoint
     def tuple_typed_entry(value: tuple[str, int]):
-        assert_called_once(tuple_typed_entry)
+        track_calls(tuple_typed_entry)
         return f"{value[0]}: {value[1]}"
 
     assert (
-        xapi.run("tuple_typed_entry abc 123".split(" "), exit_on_error=False)
+        xapi.run(list("tuple_typed_entry abc 123".split(" ")), exit_on_error=False)
         == "abc: 123"
     )
+    assert calls(tuple_typed_entry) == 1
 
 
 def test_literal_single():
@@ -127,14 +132,15 @@ def test_literal_single():
 
     @xapi.entrypoint
     def lit_single_entry(value: Literal["min"]):
-        assert_called_once(lit_single_entry)
+        track_calls(lit_single_entry)
         return value
 
-    with pytest.raises(AttributeError):
-        assert (
-            xapi.run("lit_single_entry min".split(" "), exit_on_error=False)
-            == "min"
-        )
+    # with pytest.raises(AttributeError):
+    #     assert xapi.run(list("lit_single_entry min".split(" ")), exit_on_error=False) == "min"
+    assert (
+        xapi.run(list("lit_single_entry min".split(" ")), exit_on_error=False) == "min"
+    )
+    assert calls(lit_single_entry) == 1
 
 
 def test_literal_multi_min():
@@ -142,13 +148,14 @@ def test_literal_multi_min():
 
     @xapi.entrypoint
     def lit_multi_min_entry(value: Literal["min", "max"]):
-        assert_called_once(lit_multi_min_entry)
+        track_calls(lit_multi_min_entry)
         return value
 
     assert (
-        xapi.run("lit_multi_min_entry min".split(" "), exit_on_error=False)
+        xapi.run(list("lit_multi_min_entry min".split(" ")), exit_on_error=False)
         == "min"
     )
+    assert calls(lit_multi_min_entry) == 1
 
 
 def test_literal_multi_max():
@@ -156,13 +163,14 @@ def test_literal_multi_max():
 
     @xapi.entrypoint
     def lit_multi_max_entry(value: Literal["min", "max"]):
-        assert_called_once(lit_multi_max_entry)
+        track_calls(lit_multi_max_entry)
         return value
 
     assert (
-        xapi.run("lit_multi_max_entry max".split(" "), exit_on_error=False)
+        xapi.run(list("lit_multi_max_entry max".split(" ")), exit_on_error=False)
         == "max"
     )
+    assert calls(lit_multi_max_entry) == 1
 
 
 def test_literal_multi_other():
@@ -170,11 +178,12 @@ def test_literal_multi_other():
 
     @xapi.entrypoint
     def lit_multi_other_entry(value: Literal["min", "max"]):
-        assert_called_once(lit_multi_other_entry)
+        track_calls(lit_multi_other_entry)
         return value
 
     with pytest.raises(SystemExit):
-        xapi.run("lit_multi_other_entry blah".split(" "), exit_on_error=False)
+        xapi.run(list("lit_multi_other_entry blah".split(" ")), exit_on_error=False)
+    assert calls(lit_multi_other_entry) == 0
 
 
 def test_enum():
@@ -189,10 +198,11 @@ def test_enum():
 
     @xapi.entrypoint
     def enum_entry(value: TestEnum):
-        assert_called_once(enum_entry)
+        track_calls(enum_entry)
         return value.value
 
-    assert xapi.run("enum_entry a".split(" "), exit_on_error=False) == "a"
+    assert xapi.run(list("enum_entry a".split(" ")), exit_on_error=False) == "a"
+    assert calls(enum_entry) == 1
 
 
 def test_boolean():
@@ -200,15 +210,16 @@ def test_boolean():
 
     @xapi.entrypoint
     def case(value: bool):
-        # assert_called_once(case)
+        track_calls(case)
         return value
 
     with pytest.raises(SystemExit):
-        assert xapi.run("case true".split(" ")) is True
+        assert xapi.run(list("case true".split(" "))) is True
 
     with pytest.raises(SystemExit):
-        assert xapi.run("case --value true".split(" ")) is True
+        assert xapi.run(list("case --value true".split(" "))) is True
 
-    assert xapi.run("case --value".split(" "), exit_on_error=False) is True
+    assert xapi.run(list("case --value".split(" ")), exit_on_error=False) is True
 
-    assert xapi.run("case".split(" "), exit_on_error=False) is False
+    assert xapi.run(list("case".split(" ")), exit_on_error=False) is False
+    assert calls(case) == 2

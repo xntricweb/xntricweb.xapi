@@ -29,7 +29,7 @@ class Entrypoint:
     usage: Optional[str] = None
     entrypoint: Optional[Callable[..., Any]] = None
     parent: Optional[Entrypoint] = None
-    arguments: Optional[list[Argument[Any]]] = None
+    arguments: Optional[list[Argument]] = None
     entrypoints: Optional[list[Entrypoint]] = None
 
     @property

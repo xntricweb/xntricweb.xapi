@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal, cast
 
 import pytest
 from xntricweb.xapi.xapi import XAPIExecutor, XAPI
@@ -19,11 +19,14 @@ mocks.patch("argparse.ArgumentParser", mock_ArgumentParser)
 
 mock_parser = SimpleNamespace(prefix_chars="-")
 
+type TestParams = Argument
+type ExpectedParams = tuple[list[Any], dict[str, Any]]
+type TestCase = tuple[TestParams, ExpectedParams]
 
 _executor = XAPIExecutor(XAPI(), mock_ArgumentParser, mock_EffectParser)
 
 
-def gen(arg):
+def gen(arg: Argument) -> tuple[list[str], dict[str, Any]]:
     # args = []
     # kwargs = {}
     return _executor.get_argument_args(arg)
@@ -31,17 +34,13 @@ def gen(arg):
     # return args, kwargs
 
 
-def _dd(default=None, **kwargs):
+def _dd(default: Any = None, **kwargs: Any):
     kwargs["default"] = default
     return kwargs
 
 
-def _p(key):
-    return "--" + key
-
-
 def test_positional():
-    cases = [
+    cases: list[TestCase] = [
         (Argument("named"), (["named"], {})),
         (
             Argument("name_underscored"),
@@ -154,7 +153,7 @@ def test_positional():
         ),
     ],
 )
-def test_optional(case, expected):
+def test_optional(case: Argument, expected: tuple[list[str], dict[str, Any]]):
     actual = gen(case)
     assert actual == expected
 
@@ -188,7 +187,9 @@ def test_special_annotations():
         assert actual == expected
 
 
-test_cases_positional_setup_argument = [
+test_cases_positional_setup_argument: list[
+    tuple[Argument, list[str], tuple[list[Any], dict[str, Any]]]
+] = [
     (
         Argument("int", index=0, annotation=int),
         ["1"],
@@ -206,7 +207,7 @@ test_cases_positional_setup_argument = [
     ),
     (
         Argument("vararg", index=0, vararg=True),
-        "abcdef".split(),
+        list("abcdef".split()),
         ([*("abcdef".split())], {}),
     ),
     (
@@ -216,7 +217,7 @@ test_cases_positional_setup_argument = [
     ),
     (
         Argument("list_strings", index=0, annotation=list[str]),
-        "abcdef".split(),
+        list("abcdef".split()),
         (["abcdef".split()], {}),
     ),
     (
@@ -257,21 +258,28 @@ test_cases_positional_setup_argument = [
     test_cases_positional_setup_argument,
     ids=[arg[0].name for arg in test_cases_positional_setup_argument],
 )
-def test_positional_setup_argument(argument, parse_args, expected):
+def test_positional_setup_argument(
+    argument: Argument,
+    parse_args: list[str],
+    expected: tuple[list[Any], dict[str, Any]],
+):
     parser = argparse.ArgumentParser(exit_on_error=False)
     _executor.setup_argument(
         0,
         argument,
         parser,
-        SimpleNamespace(get_argument_doc_info=lambda _: {}),
+        mocks.MagicMock(),
+        # SimpleNamespace(get_argument_doc_info=lambda _: {}),
     )
     result = vars(parser.parse_args(parse_args))
-    args, kwargs = ([], {})
+    args, kwargs = cast(tuple[list[Any], dict[str, Any]], ([], {}))
     argument.generate_call_arg(result.get(argument.name), args, kwargs)
     assert (args, kwargs) == expected
 
 
-test_cases_optional_setup_argument = [
+test_cases_optional_setup_argument: list[
+    tuple[Argument, list[str], tuple[list[Any], dict[str, Any]]]
+] = [
     (
         Argument("int", default=3, annotation=int),
         ["--int", "1"],
@@ -358,17 +366,21 @@ test_cases_optional_setup_argument = [
     test_cases_optional_setup_argument,
     ids=[arg[0].name for arg in test_cases_optional_setup_argument],
 )
-def test_optional_setup_argument(argument, parse_args, expected):
+def test_optional_setup_argument(
+    argument: Argument,
+    parse_args: list[str],
+    expected: tuple[list[Any], dict[str, Any]],
+):
     print("processing %r" % argument)
     parser = argparse.ArgumentParser(exit_on_error=False)
     _executor.setup_argument(
         0,
         argument,
         parser,
-        SimpleNamespace(get_argument_doc_info=lambda _: {}),
+        mocks.MagicMock(),
     )
     result = vars(parser.parse_args(parse_args))
-    args, kwargs = ([], {})
+    args, kwargs = cast(tuple[list[Any], dict[str, Any]], ([], {}))
     argument.generate_call_arg(result.get(argument.name), args, kwargs)
     print("processed %r" % argument)
     assert (args, kwargs) == expected, f"{argument.name} failed"

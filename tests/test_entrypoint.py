@@ -1,68 +1,42 @@
 import inspect
-from types import SimpleNamespace
 from typing import Any, Callable
 
 import pytest
 from xntricweb.xapi.entrypoint import (
-    _get_inspect_arg_details,
-    _get_fn_details,
+    _get_inspect_arg_details,  # type: ignore
+    _get_fn_details,  # type: ignore
 )
-
-
-class _P:
-    POSITIONAL_ONLY = 1
-    VAR_KEYWORD = 2
-    VAR_POSITIONAL = 3
-
-    empty = object()
-
-    def __init__(self, name, annotation, kind):
-        self.name = name
-        self.annotation = annotation
-        self.kind = kind
-
-
-def _ns(
-    args=[],
-    varargs=None,
-    varkw=None,
-    defaults=None,
-    kwonlyargs=[],
-    kwonlydefaults=None,
-    annotations={},
-):
-    return SimpleNamespace(**locals())
 
 
 def no_args():
     pass
 
 
-def plain_arg(a):
+def plain_arg(a):  # type: ignore
     pass
 
 
-def plain_arg_multi(a, b):
+def plain_arg_multi(a, b):  # type: ignore
     pass
 
 
-def plain_arg_defaults(a, b=1, c=2):
+def plain_arg_defaults(a, b=1, c=2):  # type: ignore
     pass
 
 
-def plain_var_arg(*j):
+def plain_var_arg(*j):  # type: ignore
     pass
 
 
-def plain_arg_var_arg(a, *j):
+def plain_arg_var_arg(a, *j):  # type: ignore
     pass
 
 
-def kw(*, m=4, n=5.0):
+def kw(*, m=4, n=5.0):  # type: ignore
     pass
 
 
-def adv(a, b=1, c=2, *j, m=4, n=5.0):
+def adv(a, b=1, c=2, *j, m=4, n=5.0):  # type: ignore
     pass
 
 
@@ -72,7 +46,7 @@ def adv_annotated(
     pass
 
 
-cases = [
+cases: list[tuple[Callable[..., Any], list[dict[str, Any]]]] = [
     (no_args, []),
     (plain_arg, [dict(index=0, name="a")]),
     (
@@ -129,9 +103,7 @@ cases = [
     argvalues=cases,
     ids=[fn[0].__name__ for fn in cases],
 )
-def test_fn_arg_details(
-    case: Callable[..., Any], expected: list[dict[str, Any]]
-):
+def test_fn_arg_details(case: Callable[..., Any], expected: list[dict[str, Any]]):
     sig = inspect.signature(case)
 
     assert _get_inspect_arg_details(list(sig.parameters.values())) == expected
@@ -149,6 +121,4 @@ def test_fn_details():
             pass
 
     assert _get_fn_details(testfn) == dict(name="testfn", description="test1")
-    assert _get_fn_details(testclass) == dict(
-        name="testclass", description="test2"
-    )
+    assert _get_fn_details(testclass) == dict(name="testclass", description="test2")
