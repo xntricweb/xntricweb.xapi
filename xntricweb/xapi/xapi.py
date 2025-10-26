@@ -36,8 +36,6 @@ class _ParserTranslationContext[str]:
 
 type _Translator = Callable[[_ParserTranslationContext[Any]], None]
 
-# entrypoint_parsers: dict[Entrypoint, argparse.ArgumentParser] = {}
-
 
 def default_translator(_: _ParserTranslationContext[str]):
     pass
@@ -223,10 +221,6 @@ class XAPI:
             elif isinstance(fn, Callable):
                 log.debug("building entrypiont from callable: %r", fn)
                 _entrypoint = Entrypoint.from_function(fn, **kwargs)
-
-            # elif issubclass(fn, Entrypoint):
-            #     log.debug("setting up entrypoint subclass %r", fn)
-            #     _entrypoint = fn(**kwargs)
 
             else:
                 _entrypoint = Entrypoint(**kwargs)

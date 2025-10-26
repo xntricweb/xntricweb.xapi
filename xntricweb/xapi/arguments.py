@@ -63,9 +63,7 @@ class Argument[T]:
         if self.vararg:
             if self.index is not None:
                 _value = _convert(value, list[self.annotation])
-                log.debug(
-                    "generated varargs for %r with value %r", self, _value
-                )
+                log.debug("generated varargs for %r with value %r", self, _value)
                 args.extend(_value)
                 return args, kwargs
 
@@ -76,17 +74,12 @@ class Argument[T]:
 
         _value = _convert(value, self.annotation)
         if self.index is not None and self.default is NOT_SPECIFIED:
-            log.debug(
-                "generating positional for %r with value %r", self, _value
-            )
+            log.debug("generating positional for %r with value %r", self, _value)
             args.append(_value)
             return args, kwargs
 
         if _value != self.default:
-
-            log.debug(
-                "generating kwarg for %r with value %r", self.name, _value
-            )
+            log.debug("generating kwarg for %r with value %r", self.name, _value)
             kwargs[self.name] = _value
             return args, kwargs
 
@@ -107,16 +100,6 @@ class Argument[T]:
         if self.default is not NOT_SPECIFIED:
             r += f"={repr(self.default)}"
         return r
-
-    # def __repr__(self):
-    #     parts = [
-    #         f"{k}={v}"
-    #         for k, v in vars(self).items()
-    #         if k != "default" and not (v is None or k[0] == ("_"))
-    #     ]
-    #     if self.default is not NOT_SPECIFIED:
-    #         parts.append(f"default={self.default}")
-    #     return f"{self.__class__.__name__}({', '.join(parts)})"
 
 
 class ConversionError(TypeError):
@@ -152,9 +135,7 @@ def _default_type_converter(
     if callable(origin):
         return origin(value)
 
-    raise ConversionError(
-        f"Unsupported origin {origin}, origin must be callable"
-    )
+    raise ConversionError(f"Unsupported origin {origin}, origin must be callable")
 
 
 def _function_type_converter(value: Any, annotation: AnyType, **_: Any) -> Any:
@@ -191,9 +172,7 @@ def _iterable_type_converter(
             origin_args[0],
         )
         if value is None:
-            log.debug(
-                "found no value passing to converter to see if this is allowed"
-            )
+            log.debug("found no value passing to converter to see if this is allowed")
             _v = _convert(value, origin_args[0])
             if _v:
                 return [_v]
@@ -210,8 +189,7 @@ def _iterable_type_converter(
         )
         if len(origin_args) != len(value):
             raise ConversionError(
-                f"annotation expected {len(origin_args)} items..."
-                f" found {len(value)}"
+                f"annotation expected {len(origin_args)} items... found {len(value)}"
             )
 
         log.debug("converting %r")
@@ -229,9 +207,7 @@ def _iterable_type_converter(
     )
 
 
-def _literal_type_converter(
-    value: Any, origin_args: tuple[AnyType, ...], **_: Any
-):
+def _literal_type_converter(value: Any, origin_args: tuple[AnyType, ...], **_: Any):
     if value in origin_args:
         return value
     raise TypeError(f"Expected {origin_args} found '{type(value)}'")
@@ -243,9 +219,7 @@ def _datetime_type_converter(value: str | None, **_) -> datetime | None:
     return datetime.fromisoformat(value)
 
 
-def _union_type_converter(
-    value: Any, origin_args: tuple[AnyType, ...], **_: Any
-):
+def _union_type_converter(value: Any, origin_args: tuple[AnyType, ...], **_: Any):
     if value is None and None.__class__ in origin_args:
         return None
 
@@ -343,6 +317,5 @@ def _convert(value: Any, annotation: AnyType):
         )
     except Exception as e:
         raise ConversionError(
-            "Failed converting %r with %r, annotation: %r"
-            % (value, origin, annotation)
+            "Failed converting %r with %r, annotation: %r" % (value, origin, annotation)
         ) from e
